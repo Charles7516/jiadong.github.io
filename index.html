@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>解說牌 WebAR 語音導覽</title>
+  
+  <!-- 引入 A-Frame 與 MindAR 官方 CDN -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; }
+
+    /* 解決 iOS 瀏覽器自動播放限制的點擊遮罩 */
+    #start-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: #fff;
+    }
+
+    #start-btn {
+      padding: 14px 28px;
+      font-size: 18px;
+      font-weight: bold;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      margin-top: 15px;
+    }
+
+    /* 畫面頂部提示文字 */
+    #status-msg {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 點擊觸發遮罩（取得 Web Audio 播放授權） -->
+  <div id="start-overlay">
+    <h2>智慧景點語音導覽</h2>
+    <p>請允許開啟相機並點擊下方按鈕開始體驗</p>
+    <button id="start-btn">開始體驗</button>
+  </div>
+
+  <div id="status-msg">請將鏡頭對準景點解說牌...</div>
+
+  <!-- AR 畫布場景 -->
+  <a-scene
+    mindar-image="imageTargetSrc: ./targets.mind;"
+    color-space="sRGB"
+    renderer="colorManagement: true, physicallyCorrectLights"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+    
+    <!-- 音訊資產預載 -->
+    <a-assets>
+      <audio id="guide-audio" src="./guide.mp3" preload="auto"></audio>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- targetIndex: 0 對應 targets.mind 中的第一張圖 -->
+    <a-entity id="signboard-target" mindar-image-target="targetIndex: 0">
+      <!-- 辨識成功時，在解說牌上疊加播放動畫平面（可選） -->
+      <a-plane color="#00FF88" opacity="0.3" position="0 0 0" height="0.6" width="0.9"></a-plane>
+    </a-entity>
+  </a-scene>
+
+  <!-- 原生 JavaScript 邏輯控制 -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const startOverlay = document.getElementById("start-overlay");
+      const startBtn = document.getElementById("start-btn");
+      const statusMsg = document.getElementById("status-msg");
+      const audio = document.getElementById("guide-audio");
+      const targetEntity = document.getElementById("signboard-target");
+
+      // 1. 使用者點擊「開始體驗」：解鎖瀏覽器音訊自動播放權限
+      startBtn.addEventListener("click", () => {
+        startOverlay.style.display = "none";
+        
+        // 預先播放 0.1 秒後暫停，藉此解鎖 iOS Safari 的 Autoplay 限制
+        audio.play().then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }).catch((err) => {
+          console.warn("音訊授權失敗:", err);
+        });
+      });
+
+      // 2. 辨識成功事件（Target Found）
+      targetEntity.addEventListener("targetFound", () => {
+        statusMsg.innerText = "辨識成功！正在播放語音導覽...";
+        statusMsg.style.background = "rgba(40, 167, 69, 0.8)";
+        
+        // 播放導覽語音
+        audio.play();
+      });
+
+      // 3. 移開解說牌事件（Target Lost）
+      targetEntity.addEventListener("targetLost", () => {
+        statusMsg.innerText = "請將鏡頭對準景點解說牌...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+        
+        // 鏡頭移開時暫停播放（亦可改為繼續播放，視需求調整）
+        audio.pause();
+      });
+    });
+  </script>
+</body>
+</html>
