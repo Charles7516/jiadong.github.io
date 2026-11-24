@@ -139,6 +139,7 @@
 
           currentAudio = audioList[targetIndex];
           if (currentAudio) {
+            currentAudio.muted = false;
             currentAudio.play();
           }
         });
