@@ -110,7 +110,7 @@
         startOverlay.style.display = "none";
         
         // 輪詢所有音訊執行一次 play -> pause 解鎖 iOS 限制
-        audio.muted = true;
+        //audio.muted = true;
         const unlockPromises = audioList.map(audio => {
           //audio.muted = true;  //靜音
           return audio.play().then(() => {
