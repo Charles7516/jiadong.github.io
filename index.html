@@ -111,9 +111,11 @@
         // 輪詢所有音訊執行一次 play -> pause 解鎖 iOS 限制
         //audio.muted = true;
         const unlockPromises = audioList.map(audio => {
+          audio.muted = true;  //靜音
           return audio.play().then(() => {
             audio.pause();
             audio.currentTime = 0;
+            audio.muted = false;    //解除靜音
           }).catch(err => console.warn("語音授權失敗:", err));
         });
 
