@@ -152,6 +152,7 @@
           statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
 
           if (currentAudio) {
+            currentAudio.muted = false;
             currentAudio.pause(); // 可依需求改為 currentAudio.stopAllAudio()
           }
         });
