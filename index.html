@@ -133,6 +133,7 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      const sceneEl = document.querySelector("a-scene");
       const startOverlay = document.getElementById("start-overlay");
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
@@ -150,8 +151,31 @@
         document.getElementById("audio-2")
       ];
 
-      let currentAudio = null; // 紀錄當前正在播放的語音
-      let currentTitle = "";   // 紀錄當前解說牌標題
+      let arSystem = null;       // MindAR 系統控制器
+      let isScanning = true;     // 目前是否處於掃描狀態
+      let currentAudio = null;   // 紀錄當前正在播放的語音
+      let currentTitle = "";     // 紀錄當前解說牌標題
+
+      // 取得 MindAR 系統實例
+      sceneEl.addEventListener("loaded", () => {
+        arSystem = sceneEl.systems["mindar-image-system"];
+      });
+
+      // 暫停掃描辨識
+      const pauseScanning = () => {
+        isScanning = false;
+        if (arSystem) {
+          arSystem.pause(true); // 傳入 true 代表保留當前畫面並停止鏡頭追蹤與辨識
+        }
+      };
+
+      // 恢復掃描辨識
+      const resumeScanning = () => {
+        isScanning = true;
+        if (arSystem) {
+          arSystem.unpause();
+        }
+      };
 
       // 停止並重置所有音訊的通用函式
       const stopAllAudio = () => {
@@ -178,13 +202,13 @@
         }
       };
 
-      // 監聽每個音訊的播放結束事件
+      // 監聽每個音訊的播放結束事件（結束後仍維持暫停掃描，直到遊客按下「結束」按鈕）
       audioList.forEach(audio => {
         audio.addEventListener("ended", () => {
           playPauseBtn.innerText = "▶ 播放";
           playPauseBtn.style.backgroundColor = "#007bff";
-          statusMsg.innerText = `播放完畢：${currentTitle}`;
-          statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+          statusMsg.innerText = `播放完畢：${currentTitle}（按「結束」繼續掃描）`;
+          statusMsg.style.background = "rgba(0, 123, 255, 0.85)";
         });
       });
 
@@ -231,7 +255,7 @@
         updateUIState(true);
       });
 
-      // 4. 控制按鈕事件：結束目前導覽
+      // 4. 控制按鈕事件：結束目前導覽，重新開啟鏡頭掃描
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -239,6 +263,8 @@
         controlBar.style.display = "none";
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+        
+        resumeScanning(); // 重新開啟鏡頭掃描辨識
       });
 
       // 5. 取得所有 AR 目標並綁定事件
@@ -250,32 +276,21 @@
 
         // 辨識成功
         target.addEventListener("targetFound", () => {
+          // 若已經進入導覽播放狀態（暫停掃描中），直接忽略後續事件
+          if (!isScanning) return;
+
           const targetAudio = audioList[targetIndex];
+          if (targetAudio) {
+            pauseScanning(); // 立刻停止鏡頭掃描辨識，避免誤觸其他解說牌並節省電量
 
-          // 如果鏡頭移開後又掃到「同一張」解說牌，且語音還在播放中，就不從頭打斷它
-          if (currentAudio === targetAudio && !currentAudio.paused) {
-            return;
-          }
+            stopAllAudio();
+            currentAudio = targetAudio;
+            currentTitle = targetTitle;
 
-          stopAllAudio(); // 切換到不同解說牌時，停止先前的語音
-
-          currentAudio = targetAudio;
-          currentTitle = targetTitle;
-
-          if (currentAudio) {
             currentAudio.muted = false;
             currentAudio.play();
             controlBar.style.display = "flex"; // 顯示下方控制按鈕列
             updateUIState(true);
-          }
-        });
-
-        // 鏡頭移開
-        target.addEventListener("targetLost", () => {
-          // 保持語音繼續播放，僅在未播放狀態下恢復預設提示
-          if (!currentAudio || currentAudio.paused) {
-            statusMsg.innerText = "請將鏡頭對準解說牌...";
-            statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
           }
         });
       });
