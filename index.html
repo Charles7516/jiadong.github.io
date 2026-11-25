@@ -30,13 +30,13 @@
     #status-msg {
       position: fixed; top: 20px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.65); color: white;
+      background: rgba(0, 0, 0, 0.7); color: white;
       padding: 10px 20px; border-radius: 20px;
-      font-size: 14px; z-index: 100; text-align: center;
+      font-size: 14px; z-index: 1001; text-align: center;
       white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* 中央圖文解說卡片 */
+    /* ★ 修正：拉高 z-index 至 1000，確保絕對浮在 AR 鏡頭與影片層最上方 */
     #info-card {
       position: fixed;
       top: 50%;
@@ -45,21 +45,14 @@
       width: 86vw;
       max-width: 400px;
       max-height: 62vh;
-      background: rgba(255, 255, 255, 0.96);
+      background: #ffffff;
       color: #222;
       border-radius: 18px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-      z-index: 95;
-      display: none; /* 掃描成功後才顯示 */
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      z-index: 1000;
+      display: none; /* 掃描成功後改為 flex */
       flex-direction: column;
       overflow: hidden;
-      backdrop-filter: blur(8px);
-      animation: fadeInScale 0.25s ease-out;
-    }
-
-    @keyframes fadeInScale {
-      from { opacity: 0; transform: translate(-50%, -48%) scale(0.95); }
-      to { opacity: 1; transform: translate(-50%, -52%) scale(1); }
     }
 
     #card-img {
@@ -68,6 +61,7 @@
       object-fit: cover;
       background-color: #e9ecef;
       display: block;
+      flex-shrink: 0;
     }
 
     #card-body {
@@ -110,12 +104,11 @@
       transform: translateX(-50%);
       display: none;
       gap: 10px;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.85);
       padding: 10px 16px;
       border-radius: 40px;
-      z-index: 100;
+      z-index: 1001;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(4px);
       white-space: nowrap;
     }
 
@@ -206,19 +199,19 @@
         {
           tag: "縣定古蹟・中西合璧建築",
           title: "蕭屋洋樓",
-          image: "./蕭屋洋樓_1.jpg", // 請替換為實際圖片路徑，若無圖片會自動隱藏
+          image: "./spot_1.jpg",
           desc: "建於日治時期（約1930年代），為佳冬蕭家招待貴賓與休憩之所。建築融合巴洛克式山牆裝飾與傳統閩客工藝，洗石子立面精緻典雅，見證了佳冬蕭家當時的繁華與文化交流。"
         },
         {
           tag: "國定古蹟・五進大院",
           title: "蕭家祖屋",
-          image: "./蕭家祖屋_2.jpg",
+          image: "./spot_2.jpg",
           desc: "全台罕見的客家五進大院建築群，完整保留了傳統客家宗祠與民居格局。屋脊燕尾與馬背交錯，牆面彩繪與木雕工藝細膩，展現客家族群耕讀傳家與敬祖尊宗的精神。"
         },
         {
           tag: "縣定古蹟・客家堂屋",
           title: "楊家祖堂",
-          image: "./楊家祖堂_3.jpg",
+          image: "./spot_3.jpg",
           desc: "佳冬楊氏宗族祭祀祖先的核心場所，建築格局方正莊嚴。正廳神龕與祖牌雕刻精巧，周圍留存傳統太極兩儀池等風水設計，體現六堆客庄傳統聚落的空間美學。"
         }
       ];
@@ -254,7 +247,6 @@
       let currentAudio = null;
       let currentTitle = "";
 
-      // 安全取得 MindAR 系統實例
       const getArSystem = () => {
         if (!arSystem && sceneEl.systems) {
           arSystem = sceneEl.systems["mindar-image-system"];
@@ -282,7 +274,7 @@
           cardImg.style.display = "none";
         }
 
-        cardBody.scrollTop = 0; // 每次開啟時將捲軸重置到最上方
+        cardBody.scrollTop = 0;
         infoCard.style.display = "flex";
       };
 
@@ -378,7 +370,7 @@
         hideInfoCard();
         controlBar.style.display = "none";
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.7)";
 
         isScanning = true;
         const system = getArSystem();
@@ -393,7 +385,7 @@
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
 
-        // 辨識成功：暫停掃描、顯示圖文卡片並播放語音
+        // ★ 修正執行順序：先顯示 UI 與播放語音，最後再呼叫 arSystem.pause(true)
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
@@ -402,21 +394,25 @@
 
           if (targetAudio && data) {
             isScanning = false;
-            const system = getArSystem();
-            if (system) {
-              system.pause(true);
-            }
 
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
 
+            // 1. 先顯示圖文卡片與下方控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
+            // 2. 播放語音並更新狀態列
             currentAudio.muted = false;
             currentAudio.play();
             updateUIState(true);
+
+            // 3. 最後再暫停 AR 鏡頭追蹤
+            const system = getArSystem();
+            if (system) {
+              system.pause(true);
+            }
           }
         });
       });
