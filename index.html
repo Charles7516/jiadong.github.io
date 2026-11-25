@@ -300,12 +300,10 @@
       ];
 
       let arSystem = null;
-      let isScanning = false;        // 預設為 false，等點擊開始且 arReady 後才開啟
-      let isUnlocking = false;       // 標記是否正在執行初始音訊解鎖
+      let isScanning = false;
       let currentAudio = null;
       let currentTitle = "";
       let isSeeking = false;
-      let cameraStopTimer = null;    // 延遲關閉相機計時器
 
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -337,49 +335,66 @@
         getArSystem();
       });
 
-      // ★ 交由 MindAR 原生 system.stop() 關閉相機，不再手動破壞 video.srcObject
+      // ★ 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌（保留 MindAR 內部狀態機不破壞）
       const turnOffCamera = () => {
-        if (cameraStopTimer) clearTimeout(cameraStopTimer);
-        // 延遲 300ms 再關閉相機硬體，避開 audio.play() 起播瞬間的執行緒搶佔
-        cameraStopTimer = setTimeout(() => {
-          const system = getArSystem();
-          if (system) {
-            system.stop();
-          }
-          const scanningUI = document.querySelector(".mindar-ui-scanning");
-          if (scanningUI) {
-            scanningUI.style.display = "none";
-          }
-        }, 300);
-      };
-
-      // ★ 重新啟動相機：直接呼叫原生 system.start()
-      const turnOnCamera = () => {
-        if (cameraStopTimer) {
-          clearTimeout(cameraStopTimer);
-          cameraStopTimer = null;
-        }
-        statusMsg.innerText = "正在啟動相機...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
-
         const system = getArSystem();
         if (system) {
-          system.start();
+          system.pause(true);
+        }
+        document.querySelectorAll("video").forEach(video => {
+          if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+          }
+          video.style.opacity = "0";
+        });
+        const scanningUI = document.querySelector(".mindar-ui-scanning");
+        if (scanningUI) {
+          scanningUI.style.display = "none";
         }
       };
 
-      // 監聽 MindAR 相機就緒事件（首次啟動與按下結束後重啟都會觸發）
-      sceneEl.addEventListener("arReady", () => {
-        const scanningUI = document.querySelector(".mindar-ui-scanning");
-        if (scanningUI) {
-          scanningUI.style.display = "flex";
+      // ★ 恢復相機與辨識：重新取得相機串流接回 MindAR 的 <video>，再呼叫 unpause()（一次即可秒辨識）
+      const turnOnCamera = async () => {
+        statusMsg.innerText = "正在重新啟動相機...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
+
+        try {
+          const videoEl = document.querySelector("video");
+          if (videoEl) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: "environment" }
+            });
+            videoEl.srcObject = stream;
+            await videoEl.play();
+            videoEl.style.opacity = "1";
+          }
+
+          const scanningUI = document.querySelector(".mindar-ui-scanning");
+          if (scanningUI) {
+            scanningUI.style.display = "flex";
+          }
+
+          const system = getArSystem();
+          if (system) {
+            system.unpause();
+          }
+
+          isScanning = true;
+          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
+        } catch (err) {
+          console.error("重啟相機失敗，改用備援啟動:", err);
+          const system = getArSystem();
+          if (system) system.start();
+          isScanning = true;
+          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         }
-        // 只有在初始遮罩已關閉後，才允許進行掃描
+      };
+
+      sceneEl.addEventListener("arReady", () => {
         if (startOverlay.style.display === "none") {
           isScanning = true;
         }
-        statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
       });
 
       const showInfoCard = (index) => {
@@ -453,31 +468,35 @@
         isSeeking = false;
       });
 
-      // 1. 使用者點擊授權：安全解鎖所有語音檔，解鎖完成後才開放掃描
+      // ★ 1. 使用者點擊授權：改用獨立 AudioContext 解鎖全站音效權限，完全不碰觸三個語音檔的 muted 狀態！
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
-        isUnlocking = true;
-        
-        const unlockPromises = audioList.map(audio => {
-          audio.muted = true;
-          return audio.play().then(() => {
-            // ★ 關鍵防護：如果使用者已經進入正式播放狀態，就絕對不要再執行解鎖的 pause()
-            if (isUnlocking && !currentAudio) {
-              audio.pause();
-              audio.currentTime = 0;
-            }
+
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            const ctx = new AudioCtx();
+            const buffer = ctx.createBuffer(1, 1, 22050);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+            if (ctx.state === "suspended") ctx.resume();
+          }
+        } catch (e) {
+          console.warn("AudioContext 解鎖提示:", e);
+        }
+
+        // 僅預先載入音檔中繼資料（不執行 play/pause 也不設 muted）
+        audioList.forEach(audio => {
+          if (audio) {
             audio.muted = false;
-          }).catch(err => {
-            audio.muted = false;
-            console.warn("語音授權失敗:", err);
-          });
+            audio.volume = 1.0;
+            audio.load();
+          }
         });
 
-        Promise.all(unlockPromises).finally(() => {
-          isUnlocking = false;
-          isScanning = true; // 確保所有解鎖動作完全收尾後，才允許觸發辨識
-          console.log("所有語音檔已安全解鎖，開始掃描");
-        });
+        isScanning = true;
       });
 
       // 2. 播放 / 暫停按鈕
@@ -485,6 +504,8 @@
         if (!currentAudio) return;
 
         if (currentAudio.paused) {
+          currentAudio.muted = false;
+          currentAudio.volume = 1.0;
           currentAudio.play();
           updateUIState(true);
         } else {
@@ -497,19 +518,21 @@
       replayBtn.addEventListener("click", () => {
         if (!currentAudio) return;
 
+        currentAudio.muted = false;
+        currentAudio.volume = 1.0;
         currentAudio.currentTime = 0;
         syncProgressUI(currentAudio);
         currentAudio.play();
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉卡片，並透過原生 system.start() 重啟相機
+      // 4. 結束按鈕：停止語音、關閉卡片，並重新開啟相機
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
         currentTitle = "";
         isSeeking = false;
-        isScanning = false; // 等待 arReady 觸發後再設為 true
+        isScanning = false;
         
         hideInfoCard();
         controlBar.style.display = "none";
@@ -530,31 +553,28 @@
 
           if (targetAudio && data) {
             isScanning = false;
-            isUnlocking = false; // 強制終止任何殘留的解鎖狀態
 
             // 1. 顯示卡片與控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
-            // 2. 播放語音（確保音量開啟且重頭播放）
+            // 2. 確保非靜音且音量為 1.0 後直接播放
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
             syncProgressUI(currentAudio);
 
             currentAudio.muted = false;
+            currentAudio.volume = 1.0;
             currentAudio.currentTime = 0;
-            const playPromise = currentAudio.play();
-            if (playPromise !== undefined) {
-              playPromise.then(() => {
-                updateUIState(true);
-              }).catch(err => {
-                console.warn("語音播放受阻，嘗試重試:", err);
-                setTimeout(() => currentAudio && currentAudio.play(), 150);
-              });
-            }
+            currentAudio.play().then(() => {
+              updateUIState(true);
+            }).catch(err => {
+              console.warn("播放受阻:", err);
+              updateUIState(false);
+            });
 
-            // 3. 延遲 300ms 關閉相機硬體，確保音訊起播穩定
+            // 3. 關閉相機硬體感測器省電
             turnOffCamera();
           }
         });
