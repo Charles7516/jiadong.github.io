@@ -307,7 +307,7 @@
       let currentTitle = "";
       let isSeeking = false;
       let progressTimer = null;
-      let scanWatchTimer = null; // ★ 主動狀態輪詢保底計時器
+      let scanWatchTimer = null;
 
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -404,7 +404,6 @@
         }
       };
 
-      // ★ 統一處理辨識成功的動作（不論由 targetFound 或狀態輪詢觸發）
       const handleTargetDetected = (targetIndex) => {
         if (!isScanning) return;
 
@@ -438,7 +437,6 @@
         turnOffCamera();
       };
 
-      // ★ 啟動狀態輪詢保底：只要任一目標在畫面中可見（object3D.visible === true），立刻觸發
       const startScanWatcher = () => {
         stopScanWatcher();
         scanWatchTimer = setInterval(() => {
@@ -477,7 +475,7 @@
         }
       };
 
-      // ★ 恢復相機與辨識：呼叫 controller.reset() 徹底清除 WebWorker 舊目標快取
+      // 恢復相機與辨識
       const turnOnCamera = async () => {
         statusMsg.innerText = "正在重新啟動相機...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
@@ -501,20 +499,17 @@
 
           const system = getArSystem();
           if (system) {
-            // 1. 呼叫 MindAR 內建的 controller.reset() 重置 WebWorker 追蹤狀態
             if (system.controller && typeof system.controller.reset === "function") {
               system.controller.reset();
             }
-            // 2. 隱藏上一輪殘留的 A-Frame 實體可見狀態
             targets.forEach(el => {
               if (el.object3D) el.object3D.visible = false;
             });
-            // 3. 恢復追蹤
             system.unpause();
           }
 
           isScanning = true;
-          startScanWatcher(); // 啟動輪詢保底，掃同一張圖也能一次秒觸發
+          startScanWatcher();
           statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         } catch (err) {
           console.error("重啟相機失敗，改用備援啟動:", err);
@@ -565,29 +560,20 @@
         syncProgressUI(currentAudio);
       });
 
-      // 1. 使用者點擊授權
+      // ★ 1. 使用者點擊授權：同步解鎖三個 <audio> 元素（不設 muted、不延遲 pause）
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
-
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (AudioCtx) {
-            const ctx = new AudioCtx();
-            const buffer = ctx.createBuffer(1, 1, 22050);
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ctx.destination);
-            source.start(0);
-            if (ctx.state === "suspended") ctx.resume();
-          }
-        } catch (e) {
-          console.warn("AudioContext 解鎖提示:", e);
-        }
 
         audioList.forEach(audio => {
           if (audio) {
             audio.muted = false;
             audio.volume = 1.0;
+            const p = audio.play();
+            if (p !== undefined) {
+              p.catch(() => {}); // 忽略緊接著 pause() 產生的 AbortError
+            }
+            audio.pause();
+            audio.currentTime = 0;
           }
         });
 
