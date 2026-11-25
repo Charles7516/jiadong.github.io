@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
 
     /* 遮罩 UI */
     #start-overlay {
@@ -33,6 +33,46 @@
       background: rgba(0, 0, 0, 0.6); color: white;
       padding: 10px 20px; border-radius: 20px;
       font-size: 15px; z-index: 100; text-align: center;
+      white-space: nowrap;
+    }
+
+    /* 下方懸浮控制按鈕列 */
+    #control-bar {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: none; /* 尚未掃描到任何解說牌前先隱藏 */
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 12px 20px;
+      border-radius: 40px;
+      z-index: 100;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+    }
+
+    .ctrl-btn {
+      padding: 10px 18px;
+      font-size: 15px;
+      font-weight: bold;
+      border: none;
+      border-radius: 25px;
+      cursor: pointer;
+      color: #fff;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .ctrl-btn:active {
+      transform: scale(0.95);
+    }
+
+    #play-pause-btn {
+      background-color: #28a745;
+    }
+
+    #replay-btn {
+      background-color: #6c757d;
     }
   </style>
 </head>
@@ -46,6 +86,12 @@
   </div>
 
   <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
+
+  <!-- 下方懸浮控制列 -->
+  <div id="control-bar">
+    <button id="play-pause-btn" class="ctrl-btn">⏸ 暫停</button>
+    <button id="replay-btn" class="ctrl-btn">🔄 重新播放</button>
+  </div>
 
   <a-scene
     mindar-image="imageTargetSrc: ./jd_demo.mind;"
@@ -85,6 +131,11 @@
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
       
+      // 控制列元素
+      const controlBar = document.getElementById("control-bar");
+      const playPauseBtn = document.getElementById("play-pause-btn");
+      const replayBtn = document.getElementById("replay-btn");
+      
       // 取得所有語音元素
       const audioList = [
         document.getElementById("audio-0"),
@@ -93,6 +144,7 @@
       ];
 
       let currentAudio = null; // 紀錄當前正在播放的語音
+      let currentTitle = "";   // 紀錄當前解說牌標題
 
       // 停止並重置所有音訊的通用函式
       const stopAllAudio = () => {
@@ -100,33 +152,79 @@
           if (audio) {
             audio.pause();
             audio.currentTime = 0;
-            audio.muted = false;
           }
         });
       };
+
+      // 更新按鈕與狀態列文字的函式
+      const updateUIState = (isPlaying) => {
+        if (isPlaying) {
+          playPauseBtn.innerText = "⏸ 暫停";
+          playPauseBtn.style.backgroundColor = "#28a745";
+          statusMsg.innerText = `正在播放：${currentTitle}`;
+          statusMsg.style.background = "rgba(40, 167, 69, 0.85)";
+        } else {
+          playPauseBtn.innerText = "▶ 播放";
+          playPauseBtn.style.backgroundColor = "#007bff";
+          statusMsg.innerText = `已暫停：${currentTitle}`;
+          statusMsg.style.background = "rgba(255, 152, 0, 0.85)";
+        }
+      };
+
+      // 監聽每個音訊的播放結束事件
+      audioList.forEach(audio => {
+        audio.addEventListener("ended", () => {
+          playPauseBtn.innerText = "▶ 播放";
+          playPauseBtn.style.backgroundColor = "#007bff";
+          statusMsg.innerText = `播放完畢：${currentTitle}`;
+          statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+        });
+      });
 
       // 1. 使用者點擊授權：一次性解鎖「所有」語音檔的播放權限
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
         
-        // 輪詢所有音訊執行一次 play -> pause 解鎖 iOS 限制
-        //audio.muted = true;
         const unlockPromises = audioList.map(audio => {
-          //audio.muted = true;  //靜音
+          audio.muted = true; // 靜音解鎖，避免同時發出爆音
           return audio.play().then(() => {
             audio.pause();
             audio.currentTime = 0;
-            //audio.muted = false;    //解除靜音
-          }).catch(err => console.warn("語音授權失敗:", err));
+            audio.muted = false;
+          }).catch(err => {
+            audio.muted = false;
+            console.warn("語音授權失敗:", err);
+          });
         });
 
         Promise.all(unlockPromises).then(() => {
           console.log("所有語音檔已解除自動播放限制");
-          //audio.muted = false;
         });
       });
 
-      // 2. 取得所有 AR 目標並綁定事件
+      // 2. 控制按鈕事件：播放 / 暫停
+      playPauseBtn.addEventListener("click", () => {
+        if (!currentAudio) return;
+
+        if (currentAudio.paused) {
+          currentAudio.play();
+          updateUIState(true);
+        } else {
+          currentAudio.pause();
+          updateUIState(false);
+        }
+      });
+
+      // 3. 控制按鈕事件：重新播放
+      replayBtn.addEventListener("click", () => {
+        if (!currentAudio) return;
+
+        currentAudio.currentTime = 0;
+        currentAudio.play();
+        updateUIState(true);
+      });
+
+      // 4. 取得所有 AR 目標並綁定事件
       const targets = document.querySelectorAll(".ar-target");
 
       targets.forEach(target => {
@@ -135,26 +233,33 @@
 
         // 辨識成功
         target.addEventListener("targetFound", () => {
-          stopAllAudio(); // 防止多個聲音重疊，先停止所有語音
+          const targetAudio = audioList[targetIndex];
 
-          statusMsg.innerText = `辨識成功！正在播放：${targetTitle}`;
-          statusMsg.style.background = "rgba(40, 167, 69, 0.85)";
+          // 如果鏡頭移開後又掃到「同一張」解說牌，且語音還在播放中，就不從頭打斷它
+          if (currentAudio === targetAudio && !currentAudio.paused) {
+            return;
+          }
 
-          currentAudio = audioList[targetIndex];
+          stopAllAudio(); // 切換到不同解說牌時，停止先前的語音
+
+          currentAudio = targetAudio;
+          currentTitle = targetTitle;
+
           if (currentAudio) {
             currentAudio.muted = false;
             currentAudio.play();
+            controlBar.style.display = "flex"; // 顯示下方控制按鈕列
+            updateUIState(true);
           }
         });
 
         // 鏡頭移開
         target.addEventListener("targetLost", () => {
-          //statusMsg.innerText = "請將鏡頭對準解說牌...";
-          //statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
-
-          if (currentAudio) {
-            currentAudio.muted = false;
-            //currentAudio.pause(); // 可依需求改為 currentAudio.stopAllAudio()
+          // 故意不暫停 currentAudio，讓遊客放下手機也能繼續聽完
+          // 僅在目前沒有播放任何語音時，恢復預設提示
+          if (!currentAudio || currentAudio.paused) {
+            statusMsg.innerText = "請將鏡頭對準解說牌...";
+            statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
           }
         });
       });
