@@ -11,7 +11,7 @@
   <style>
     body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
-    /* ★ 強制壓低 A-Frame 場景與 MindAR 內建掃描 UI 的層級 */
+    /* 強制壓低 A-Frame 場景與 MindAR 內建掃描 UI 的層級 */
     a-scene {
       position: fixed !important;
       top: 0; left: 0; width: 100vw; height: 100vh;
@@ -48,7 +48,7 @@
       white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* ★ 中央圖文解說卡片（放在 a-scene 後方並設高 z-index） */
+    /* 中央文字解說卡片 */
     #info-card {
       position: fixed;
       top: 50%;
@@ -56,7 +56,7 @@
       transform: translate(-50%, -52%);
       width: 86vw;
       max-width: 400px;
-      max-height: 62vh;
+      max-height: 60vh;
       background: #ffffff;
       color: #222;
       border-radius: 18px;
@@ -67,17 +67,8 @@
       overflow: hidden;
     }
 
-    #card-img {
-      width: 100%;
-      height: 170px;
-      object-fit: cover;
-      background-color: #e9ecef;
-      display: block;
-      flex-shrink: 0;
-    }
-
     #card-body {
-      padding: 18px 20px;
+      padding: 22px 24px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
     }
@@ -88,22 +79,22 @@
       font-weight: bold;
       color: #007bff;
       background: rgba(0, 123, 255, 0.12);
-      padding: 3px 10px;
+      padding: 4px 12px;
       border-radius: 12px;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
 
     #card-title {
-      margin: 0 0 10px 0;
-      font-size: 20px;
+      margin: 0 0 12px 0;
+      font-size: 22px;
       font-weight: bold;
       color: #111;
     }
 
     #card-desc {
       margin: 0;
-      font-size: 15px;
-      line-height: 1.65;
+      font-size: 16px;
+      line-height: 1.7;
       color: #444;
       text-align: justify;
     }
@@ -163,28 +154,22 @@
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
+    <!-- ★ 已移除內部的 <a-plane> 彩色半透明遮罩 -->
     <!-- 解說牌 1 (Target Index 0) -->
-    <a-entity class="ar-target" data-index="0" mindar-image-target="targetIndex: 0">
-      <a-plane color="#00FF88" opacity="0.3" height="0.6" width="0.9"></a-plane>
-    </a-entity>
+    <a-entity class="ar-target" data-index="0" mindar-image-target="targetIndex: 0"></a-entity>
 
     <!-- 解說牌 2 (Target Index 1) -->
-    <a-entity class="ar-target" data-index="1" mindar-image-target="targetIndex: 1">
-      <a-plane color="#00E5FF" opacity="0.3" height="0.6" width="0.9"></a-plane>
-    </a-entity>
+    <a-entity class="ar-target" data-index="1" mindar-image-target="targetIndex: 1"></a-entity>
 
     <!-- 解說牌 3 (Target Index 2) -->
-    <a-entity class="ar-target" data-index="2" mindar-image-target="targetIndex: 2">
-      <a-plane color="#FF007F" opacity="0.3" height="0.6" width="0.9"></a-plane>
-    </a-entity>
+    <a-entity class="ar-target" data-index="2" mindar-image-target="targetIndex: 2"></a-entity>
   </a-scene>
 
-  <!-- ★ 所有 2D UI 統一放在 <a-scene> 之後，確保顯示層級在最上方 -->
+  <!-- 所有 2D UI 統一放在 <a-scene> 之後，確保顯示層級在最上方 -->
   <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
 
-  <!-- 中央圖文解說卡片 -->
+  <!-- 中央純文字解說卡片 -->
   <div id="info-card">
-    <img id="card-img" src="" alt="景點照片" onerror="this.style.display='none'" />
     <div id="card-body">
       <span id="card-tag">佳冬歷史建築導覽</span>
       <h3 id="card-title">景點名稱</h3>
@@ -208,24 +193,21 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      // ★ 各景點圖文解說資料（對應 targetIndex 0, 1, 2）
+      // 各景點文字解說資料（對應 targetIndex 0, 1, 2）
       const spotData = [
         {
           tag: "縣定古蹟・中西合璧建築",
           title: "蕭屋洋樓",
-          image: "./spot_1.jpg",
           desc: "建於日治時期（約1930年代），為佳冬蕭家招待貴賓與休憩之所。建築融合巴洛克式山牆裝飾與傳統閩客工藝，洗石子立面精緻典雅，見證了佳冬蕭家當時的繁華與文化交流。"
         },
         {
           tag: "國定古蹟・五進大院",
           title: "蕭家祖屋",
-          image: "./spot_2.jpg",
           desc: "全台罕見的客家五進大院建築群，完整保留了傳統客家宗祠與民居格局。屋脊燕尾與馬背交錯，牆面彩繪與木雕工藝細膩，展現客家族群耕讀傳家與敬祖尊宗的精神。"
         },
         {
           tag: "縣定古蹟・客家堂屋",
           title: "楊家祖堂",
-          image: "./spot_3.jpg",
           desc: "佳冬楊氏宗族祭祀祖先的核心場所，建築格局方正莊嚴。正廳神龕與祖牌雕刻精巧，周圍留存傳統太極兩儀池等風水設計，體現六堆客庄傳統聚落的空間美學。"
         }
       ];
@@ -235,9 +217,8 @@
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
       
-      // 圖文卡片元素
+      // 文字卡片元素
       const infoCard = document.getElementById("info-card");
-      const cardImg = document.getElementById("card-img");
       const cardTag = document.getElementById("card-tag");
       const cardTitle = document.getElementById("card-title");
       const cardDesc = document.getElementById("card-desc");
@@ -272,7 +253,7 @@
         getArSystem();
       });
 
-      // ★ 強制控制 MindAR 內建掃描框與暗角遮罩的顯示/隱藏
+      // 控制 MindAR 內建掃描框與暗角遮罩的顯示/隱藏
       const toggleMindAROverlay = (show) => {
         const scanningUI = document.querySelector(".mindar-ui-scanning");
         if (scanningUI) {
@@ -280,7 +261,7 @@
         }
       };
 
-      // 顯示中央圖文解說卡片
+      // 顯示中央文字解說卡片
       const showInfoCard = (index) => {
         const data = spotData[index];
         if (!data) return;
@@ -289,18 +270,11 @@
         cardTitle.innerText = data.title;
         cardDesc.innerText = data.desc;
 
-        if (data.image) {
-          cardImg.style.display = "block";
-          cardImg.src = data.image;
-        } else {
-          cardImg.style.display = "none";
-        }
-
         cardBody.scrollTop = 0;
         infoCard.style.display = "flex";
       };
 
-      // 隱藏中央圖文解說卡片
+      // 隱藏中央文字解說卡片
       const hideInfoCard = () => {
         infoCard.style.display = "none";
       };
@@ -383,7 +357,7 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉圖文卡片、恢復掃描 UI 並執行 arSystem.unpause()
+      // 4. 結束按鈕：停止語音、關閉文字卡片、恢復掃描 UI 並執行 arSystem.unpause()
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -395,7 +369,7 @@
         statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
 
         isScanning = true;
-        toggleMindAROverlay(true); // 重新顯示掃描框
+        toggleMindAROverlay(true);
 
         const system = getArSystem();
         if (system) {
@@ -409,7 +383,7 @@
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
 
-        // 辨識成功：隱藏 MindAR 掃描框、顯示圖文卡片、播放語音並暫停掃描
+        // 辨識成功：隱藏 MindAR 掃描框、顯示文字卡片、播放語音並暫停掃描
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
@@ -422,7 +396,7 @@
             // 1. 隱藏 MindAR 內建的掃描遮罩
             toggleMindAROverlay(false);
 
-            // 2. 顯示中央圖文卡片與下方控制列
+            // 2. 顯示中央文字卡片與下方控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
