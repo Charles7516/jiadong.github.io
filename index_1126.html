@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>佳冬解說牌語音導覽系統</title>
+  
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    body { margin: 0; overflow: hidden; }
+
+    /* 遮罩 UI */
+    #start-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.85);
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      z-index: 9999; color: #fff;
+    }
+
+    #start-btn {
+      padding: 14px 28px; font-size: 18px; font-weight: bold;
+      background-color: #007bff; color: white; border: none;
+      border-radius: 30px; cursor: pointer; margin-top: 15px;
+    }
+
+    #status-msg {
+      position: fixed; top: 20px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.6); color: white;
+      padding: 10px 20px; border-radius: 20px;
+      font-size: 15px; z-index: 100; text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 授權遮罩 -->
+  <div id="start-overlay">
+    <h2>佳冬解說牌語音導覽</h2>
+    <p>點擊下方按鈕以啟用語音與相機功能</p>
+    <button id="start-btn">開始導覽體驗</button>
+  </div>
+
+  <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
+
+  <a-scene
+    mindar-image="imageTargetSrc: ./jd_demo.mind;"
+    color-space="sRGB"
+    renderer="colorManagement: true, physicallyCorrectLights"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+    
+    <!-- 預載所有語音檔 (對應不同解說牌) -->
+    <a-assets>
+      <audio id="audio-0" src="./guide_1.mp3" preload="auto"></audio>
+      <audio id="audio-1" src="./guide_2.mp3" preload="auto"></audio>
+      <audio id="audio-2" src="./guide_3.mp3" preload="auto"></audio>
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <!-- 解說牌 1 (Target Index 0) -->
+    <a-entity class="ar-target" data-index="0" data-title="解說牌：蕭屋洋樓" mindar-image-target="targetIndex: 0">
+      <a-plane color="#00FF88" opacity="0.3" height="0.6" width="0.9"></a-plane>
+    </a-entity>
+
+    <!-- 解說牌 2 (Target Index 1) -->
+    <a-entity class="ar-target" data-index="1" data-title="解說牌：蕭家祖屋" mindar-image-target="targetIndex: 1">
+      <a-plane color="#00E5FF" opacity="0.3" height="0.6" width="0.9"></a-plane>
+    </a-entity>
+
+    <!-- 解說牌 3 (Target Index 2) -->
+    <a-entity class="ar-target" data-index="2" data-title="解說牌：楊家祖堂" mindar-image-target="targetIndex: 2">
+      <a-plane color="#FF007F" opacity="0.3" height="0.6" width="0.9"></a-plane>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const startOverlay = document.getElementById("start-overlay");
+      const startBtn = document.getElementById("start-btn");
+      const statusMsg = document.getElementById("status-msg");
+      
+      // 取得所有語音元素
+      const audioList = [
+        document.getElementById("audio-0"),
+        document.getElementById("audio-1"),
+        document.getElementById("audio-2")
+      ];
+
+      let currentAudio = null; // 紀錄當前正在播放的語音
+
+      // 停止並重置所有音訊的通用函式
+      const stopAllAudio = () => {
+        audioList.forEach(audio => {
+          if (audio) {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = false;
+          }
+        });
+      };
+
+      // 1. 使用者點擊授權：一次性解鎖「所有」語音檔的播放權限
+      startBtn.addEventListener("click", () => {
+        startOverlay.style.display = "none";
+        
+        // 輪詢所有音訊執行一次 play -> pause 解鎖 iOS 限制
+        //audio.muted = true;
+        const unlockPromises = audioList.map(audio => {
+          //audio.muted = true;  //靜音
+          return audio.play().then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            //audio.muted = false;    //解除靜音
+          }).catch(err => console.warn("語音授權失敗:", err));
+        });
+
+        Promise.all(unlockPromises).then(() => {
+          console.log("所有語音檔已解除自動播放限制");
+          //audio.muted = false;
+        });
+      });
+
+      // 2. 取得所有 AR 目標並綁定事件
+      const targets = document.querySelectorAll(".ar-target");
+
+      targets.forEach(target => {
+        const targetIndex = parseInt(target.getAttribute("data-index"));
+        const targetTitle = target.getAttribute("data-title");
+
+        // 辨識成功
+        target.addEventListener("targetFound", () => {
+          stopAllAudio(); // 防止多個聲音重疊，先停止所有語音
+
+          statusMsg.innerText = `辨識成功！正在播放：${targetTitle}`;
+          statusMsg.style.background = "rgba(40, 167, 69, 0.85)";
+
+          currentAudio = audioList[targetIndex];
+          if (currentAudio) {
+            currentAudio.muted = false;
+            currentAudio.play();
+          }
+        });
+
+        // 鏡頭移開
+        target.addEventListener("targetLost", () => {
+          statusMsg.innerText = "請將鏡頭對準解說牌...";
+          statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+
+          if (currentAudio) {
+            currentAudio.muted = false;
+            currentAudio.pause(); // 可依需求改為 currentAudio.stopAllAudio()
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
