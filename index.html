@@ -299,12 +299,15 @@
         document.getElementById("audio-2")
       ];
 
+      const targets = document.querySelectorAll(".ar-target");
+
       let arSystem = null;
       let isScanning = false;
       let currentAudio = null;
       let currentTitle = "";
       let isSeeking = false;
       let progressTimer = null;
+      let scanWatchTimer = null; // ★ 主動狀態輪詢保底計時器
 
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -356,94 +359,6 @@
         getArSystem();
       });
 
-      // ★ 強制重置 MindAR 內部目標追蹤狀態（清除「已鎖定同一張圖」的記憶）
-      const resetMindARTrackingState = (system) => {
-        if (!system) return;
-
-        // 1. 重置 MindAR Controller 內部的 trackingStates
-        if (system.controller && Array.isArray(system.controller.trackingStates)) {
-          system.controller.trackingStates.forEach(state => {
-            state.showing = false;
-            state.isTracking = false;
-            state.trackMiss = 0;
-          });
-        }
-
-        // 2. 重置 A-Frame 各 target 元件的追蹤標記
-        document.querySelectorAll(".ar-target").forEach(el => {
-          const targetComp = el.components && el.components["mindar-image-target"];
-          if (targetComp && typeof targetComp.updateWorldMatrix === "function") {
-            targetComp.updateWorldMatrix(null); // 傳入 null 會觸發 MindAR 內部的 targetLost 狀態歸零
-          }
-        });
-      };
-
-      // 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌
-      const turnOffCamera = () => {
-        const system = getArSystem();
-        if (system) {
-          system.pause(true);
-        }
-        document.querySelectorAll("video").forEach(video => {
-          if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-          }
-          video.style.opacity = "0";
-        });
-        const scanningUI = document.querySelector(".mindar-ui-scanning");
-        if (scanningUI) {
-          scanningUI.style.display = "none";
-        }
-      };
-
-      // 恢復相機與辨識：重接視訊軌並清空上一張圖片的鎖定狀態
-      const turnOnCamera = async () => {
-        statusMsg.innerText = "正在重新啟動相機...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
-
-        try {
-          const videoEl = document.querySelector("video");
-          if (videoEl) {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              audio: false,
-              video: { facingMode: "environment" }
-            });
-            videoEl.srcObject = stream;
-            await videoEl.play();
-            videoEl.style.opacity = "1";
-          }
-
-          const scanningUI = document.querySelector(".mindar-ui-scanning");
-          if (scanningUI) {
-            scanningUI.style.display = "flex";
-          }
-
-          const system = getArSystem();
-          if (system) {
-            resetMindARTrackingState(system); // ★ 關鍵：重設追蹤狀態，掃同一張圖也能一次觸發
-            system.unpause();
-          }
-
-          isScanning = true;
-          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        } catch (err) {
-          console.error("重啟相機失敗，改用備援啟動:", err);
-          const system = getArSystem();
-          if (system) {
-            resetMindARTrackingState(system);
-            system.start();
-          }
-          isScanning = true;
-          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        }
-      };
-
-      sceneEl.addEventListener("arReady", () => {
-        if (startOverlay.style.display === "none") {
-          isScanning = true;
-        }
-      });
-
       const showInfoCard = (index) => {
         const data = spotData[index];
         if (!data) return;
@@ -488,6 +403,135 @@
           stopProgressTimer();
         }
       };
+
+      // ★ 統一處理辨識成功的動作（不論由 targetFound 或狀態輪詢觸發）
+      const handleTargetDetected = (targetIndex) => {
+        if (!isScanning) return;
+
+        const targetAudio = audioList[targetIndex];
+        const data = spotData[targetIndex];
+        if (!targetAudio || !data) return;
+
+        isScanning = false;
+        stopScanWatcher();
+
+        showInfoCard(targetIndex);
+        controlBar.style.display = "flex";
+
+        stopAllAudio();
+        currentAudio = targetAudio;
+        currentTitle = `解說牌：${data.title}`;
+
+        currentAudio.muted = false;
+        currentAudio.volume = 1.0;
+        currentAudio.currentTime = 0;
+        syncProgressUI(currentAudio);
+
+        currentAudio.play().then(() => {
+          syncProgressUI(currentAudio);
+          updateUIState(true);
+        }).catch(err => {
+          console.warn("播放受阻:", err);
+          updateUIState(false);
+        });
+
+        turnOffCamera();
+      };
+
+      // ★ 啟動狀態輪詢保底：只要任一目標在畫面中可見（object3D.visible === true），立刻觸發
+      const startScanWatcher = () => {
+        stopScanWatcher();
+        scanWatchTimer = setInterval(() => {
+          if (!isScanning) return;
+          targets.forEach(target => {
+            if (target.object3D && target.object3D.visible) {
+              const idx = parseInt(target.getAttribute("data-index"), 10);
+              handleTargetDetected(idx);
+            }
+          });
+        }, 120);
+      };
+
+      const stopScanWatcher = () => {
+        if (scanWatchTimer) {
+          clearInterval(scanWatchTimer);
+          scanWatchTimer = null;
+        }
+      };
+
+      // 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌
+      const turnOffCamera = () => {
+        const system = getArSystem();
+        if (system) {
+          system.pause(true);
+        }
+        document.querySelectorAll("video").forEach(video => {
+          if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+          }
+          video.style.opacity = "0";
+        });
+        const scanningUI = document.querySelector(".mindar-ui-scanning");
+        if (scanningUI) {
+          scanningUI.style.display = "none";
+        }
+      };
+
+      // ★ 恢復相機與辨識：呼叫 controller.reset() 徹底清除 WebWorker 舊目標快取
+      const turnOnCamera = async () => {
+        statusMsg.innerText = "正在重新啟動相機...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
+
+        try {
+          const videoEl = document.querySelector("video");
+          if (videoEl) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: { facingMode: "environment" }
+            });
+            videoEl.srcObject = stream;
+            await videoEl.play();
+            videoEl.style.opacity = "1";
+          }
+
+          const scanningUI = document.querySelector(".mindar-ui-scanning");
+          if (scanningUI) {
+            scanningUI.style.display = "flex";
+          }
+
+          const system = getArSystem();
+          if (system) {
+            // 1. 呼叫 MindAR 內建的 controller.reset() 重置 WebWorker 追蹤狀態
+            if (system.controller && typeof system.controller.reset === "function") {
+              system.controller.reset();
+            }
+            // 2. 隱藏上一輪殘留的 A-Frame 實體可見狀態
+            targets.forEach(el => {
+              if (el.object3D) el.object3D.visible = false;
+            });
+            // 3. 恢復追蹤
+            system.unpause();
+          }
+
+          isScanning = true;
+          startScanWatcher(); // 啟動輪詢保底，掃同一張圖也能一次秒觸發
+          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
+        } catch (err) {
+          console.error("重啟相機失敗，改用備援啟動:", err);
+          const system = getArSystem();
+          if (system) system.start();
+          isScanning = true;
+          startScanWatcher();
+          statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
+        }
+      };
+
+      sceneEl.addEventListener("arReady", () => {
+        if (startOverlay.style.display === "none") {
+          isScanning = true;
+          startScanWatcher();
+        }
+      });
 
       audioList.forEach(audio => {
         ["loadedmetadata", "durationchange", "playing", "timeupdate"].forEach(evt => {
@@ -548,6 +592,7 @@
         });
 
         isScanning = true;
+        startScanWatcher();
       });
 
       // 2. 播放 / 暫停按鈕
@@ -580,6 +625,7 @@
       // 4. 結束按鈕
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
+        stopScanWatcher();
         currentAudio = null;
         currentTitle = "";
         isSeeking = false;
@@ -591,42 +637,10 @@
       });
 
       // 5. 綁定 AR 目標事件
-      const targets = document.querySelectorAll(".ar-target");
-
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
-
         target.addEventListener("targetFound", () => {
-          if (!isScanning) return;
-
-          const targetAudio = audioList[targetIndex];
-          const data = spotData[targetIndex];
-
-          if (targetAudio && data) {
-            isScanning = false;
-
-            showInfoCard(targetIndex);
-            controlBar.style.display = "flex";
-
-            stopAllAudio();
-            currentAudio = targetAudio;
-            currentTitle = `解說牌：${data.title}`;
-
-            currentAudio.muted = false;
-            currentAudio.volume = 1.0;
-            currentAudio.currentTime = 0;
-            syncProgressUI(currentAudio);
-
-            currentAudio.play().then(() => {
-              syncProgressUI(currentAudio);
-              updateUIState(true);
-            }).catch(err => {
-              console.warn("播放受阻:", err);
-              updateUIState(false);
-            });
-
-            turnOffCamera();
-          }
+          handleTargetDetected(targetIndex);
         });
       });
     });
