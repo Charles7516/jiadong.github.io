@@ -53,10 +53,10 @@
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -52%);
+      transform: translate(-50%, -53%);
       width: 86vw;
       max-width: 400px;
-      max-height: 60vh;
+      max-height: 62vh;
       background: #ffffff;
       color: #222;
       border-radius: 18px;
@@ -68,9 +68,10 @@
     }
 
     #card-body {
-      padding: 22px 24px;
+      padding: 22px 24px 16px 24px;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
+      flex: 1;
     }
 
     #card-tag {
@@ -97,6 +98,57 @@
       line-height: 1.7;
       color: #444;
       text-align: justify;
+    }
+
+    /* ★ 卡片底部語音進度條區塊 */
+    #progress-container {
+      padding: 12px 22px 16px 22px;
+      background: #f8f9fa;
+      border-top: 1px solid #e9ecef;
+      flex-shrink: 0;
+    }
+
+    #seek-slider {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #dee2e6;
+      border-radius: 4px;
+      outline: none;
+      cursor: pointer;
+      margin: 0 0 6px 0;
+      display: block;
+    }
+
+    #seek-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #007bff;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    }
+
+    #seek-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 50%;
+      background: #007bff;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    }
+
+    #time-display {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6c757d;
+      font-variant-numeric: tabular-nums;
     }
 
     /* 下方懸浮控制按鈕列 */
@@ -154,7 +206,6 @@
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- ★ 已移除內部的 <a-plane> 彩色半透明遮罩 -->
     <!-- 解說牌 1 (Target Index 0) -->
     <a-entity class="ar-target" data-index="0" mindar-image-target="targetIndex: 0"></a-entity>
 
@@ -168,12 +219,19 @@
   <!-- 所有 2D UI 統一放在 <a-scene> 之後，確保顯示層級在最上方 -->
   <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
 
-  <!-- 中央純文字解說卡片 -->
+  <!-- 中央純文字解說卡片（含底部語音進度條） -->
   <div id="info-card">
     <div id="card-body">
       <span id="card-tag">佳冬歷史建築導覽</span>
       <h3 id="card-title">景點名稱</h3>
       <p id="card-desc">景點詳細介紹文字...</p>
+    </div>
+    <div id="progress-container">
+      <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.1" />
+      <div id="time-display">
+        <span id="current-time">00:00</span>
+        <span id="total-time">00:00</span>
+      </div>
     </div>
   </div>
 
@@ -217,12 +275,15 @@
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
       
-      // 文字卡片元素
+      // 文字卡片與進度條元素
       const infoCard = document.getElementById("info-card");
       const cardTag = document.getElementById("card-tag");
       const cardTitle = document.getElementById("card-title");
       const cardDesc = document.getElementById("card-desc");
       const cardBody = document.getElementById("card-body");
+      const seekSlider = document.getElementById("seek-slider");
+      const currentTimeEl = document.getElementById("current-time");
+      const totalTimeEl = document.getElementById("total-time");
 
       // 控制列元素
       const controlBar = document.getElementById("control-bar");
@@ -241,6 +302,28 @@
       let isScanning = true;
       let currentAudio = null;
       let currentTitle = "";
+      let isSeeking = false; // 標記使用者是否正在拖曳進度條
+
+      // 秒數格式化為 MM:SS
+      const formatTime = (sec) => {
+        if (!isFinite(sec) || sec < 0) return "00:00";
+        const mins = Math.floor(sec / 60);
+        const secs = Math.floor(sec % 60);
+        return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+      };
+
+      // 更新進度條與總時長顯示
+      const syncProgressUI = (audio) => {
+        if (!audio) return;
+        const duration = audio.duration || 0;
+        const current = audio.currentTime || 0;
+        seekSlider.max = duration > 0 ? duration : 100;
+        if (!isSeeking) {
+          seekSlider.value = current;
+          currentTimeEl.innerText = formatTime(current);
+        }
+        totalTimeEl.innerText = formatTime(duration);
+      };
 
       const getArSystem = () => {
         if (!arSystem && sceneEl.systems) {
@@ -287,6 +370,9 @@
             audio.currentTime = 0;
           }
         });
+        seekSlider.value = 0;
+        currentTimeEl.innerText = "00:00";
+        totalTimeEl.innerText = "00:00";
       };
 
       // 更新按鈕與狀態列文字
@@ -304,14 +390,35 @@
         }
       };
 
-      // 監聽音訊自然播放結束
+      // 綁定每個音訊的時間更新與結束事件
       audioList.forEach(audio => {
+        audio.addEventListener("loadedmetadata", () => {
+          if (currentAudio === audio) syncProgressUI(audio);
+        });
+
+        audio.addEventListener("timeupdate", () => {
+          if (currentAudio === audio) syncProgressUI(audio);
+        });
+
         audio.addEventListener("ended", () => {
           playPauseBtn.innerText = "▶ 播放";
           playPauseBtn.style.backgroundColor = "#007bff";
           statusMsg.innerText = `播放完畢：${currentTitle}（按「結束」繼續掃描）`;
           statusMsg.style.background = "rgba(0, 123, 255, 0.85)";
         });
+      });
+
+      // ★ 進度條拖曳互動事件
+      seekSlider.addEventListener("input", () => {
+        if (!currentAudio) return;
+        isSeeking = true;
+        currentTimeEl.innerText = formatTime(parseFloat(seekSlider.value));
+      });
+
+      seekSlider.addEventListener("change", () => {
+        if (!currentAudio) return;
+        currentAudio.currentTime = parseFloat(seekSlider.value);
+        isSeeking = false;
       });
 
       // 1. 使用者點擊授權：解鎖所有語音檔
@@ -353,6 +460,7 @@
         if (!currentAudio) return;
 
         currentAudio.currentTime = 0;
+        syncProgressUI(currentAudio);
         currentAudio.play();
         updateUIState(true);
       });
@@ -362,6 +470,7 @@
         stopAllAudio();
         currentAudio = null;
         currentTitle = "";
+        isSeeking = false;
         
         hideInfoCard();
         controlBar.style.display = "none";
@@ -400,10 +509,11 @@
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
-            // 3. 播放語音並更新狀態列
+            // 3. 播放語音並同步進度條與狀態列
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
+            syncProgressUI(currentAudio);
 
             currentAudio.muted = false;
             currentAudio.play();
