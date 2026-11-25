@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
     /* 遮罩 UI */
     #start-overlay {
@@ -18,7 +18,7 @@
       background: rgba(0, 0, 0, 0.85);
       display: flex; flex-direction: column;
       justify-content: center; align-items: center;
-      z-index: 9999; color: #fff;
+      z-index: 9999; color: #fff; text-align: center; padding: 20px; box-sizing: border-box;
     }
 
     #start-btn {
@@ -30,21 +30,87 @@
     #status-msg {
       position: fixed; top: 20px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.6); color: white;
+      background: rgba(0, 0, 0, 0.65); color: white;
       padding: 10px 20px; border-radius: 20px;
-      font-size: 15px; z-index: 100; text-align: center;
-      white-space: nowrap;
+      font-size: 14px; z-index: 100; text-align: center;
+      white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* 中央圖文解說卡片 */
+    #info-card {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -52%);
+      width: 86vw;
+      max-width: 400px;
+      max-height: 62vh;
+      background: rgba(255, 255, 255, 0.96);
+      color: #222;
+      border-radius: 18px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      z-index: 95;
+      display: none; /* 掃描成功後才顯示 */
+      flex-direction: column;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      animation: fadeInScale 0.25s ease-out;
+    }
+
+    @keyframes fadeInScale {
+      from { opacity: 0; transform: translate(-50%, -48%) scale(0.95); }
+      to { opacity: 1; transform: translate(-50%, -52%) scale(1); }
+    }
+
+    #card-img {
+      width: 100%;
+      height: 170px;
+      object-fit: cover;
+      background-color: #e9ecef;
+      display: block;
+    }
+
+    #card-body {
+      padding: 18px 20px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #card-tag {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #007bff;
+      background: rgba(0, 123, 255, 0.12);
+      padding: 3px 10px;
+      border-radius: 12px;
+      margin-bottom: 6px;
+    }
+
+    #card-title {
+      margin: 0 0 10px 0;
+      font-size: 20px;
+      font-weight: bold;
+      color: #111;
+    }
+
+    #card-desc {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.65;
+      color: #444;
+      text-align: justify;
     }
 
     /* 下方懸浮控制按鈕列 */
     #control-bar {
       position: fixed;
-      bottom: 30px;
+      bottom: 28px;
       left: 50%;
       transform: translateX(-50%);
       display: none;
       gap: 10px;
-      background: rgba(0, 0, 0, 0.75);
+      background: rgba(0, 0, 0, 0.8);
       padding: 10px 16px;
       border-radius: 40px;
       z-index: 100;
@@ -68,17 +134,9 @@
       transform: scale(0.95);
     }
 
-    #play-pause-btn {
-      background-color: #28a745;
-    }
-
-    #replay-btn {
-      background-color: #6c757d;
-    }
-
-    #close-btn {
-      background-color: #dc3545;
-    }
+    #play-pause-btn { background-color: #28a745; }
+    #replay-btn { background-color: #6c757d; }
+    #close-btn { background-color: #dc3545; }
   </style>
 </head>
 <body>
@@ -91,6 +149,16 @@
   </div>
 
   <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
+
+  <!-- 中央圖文解說卡片 -->
+  <div id="info-card">
+    <img id="card-img" src="" alt="景點照片" onerror="this.style.display='none'" />
+    <div id="card-body">
+      <span id="card-tag">佳冬歷史建築導覽</span>
+      <h3 id="card-title">景點名稱</h3>
+      <p id="card-desc">景點詳細介紹文字...</p>
+    </div>
+  </div>
 
   <!-- 下方懸浮控制列 -->
   <div id="control-bar">
@@ -116,28 +184,58 @@
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
     <!-- 解說牌 1 (Target Index 0) -->
-    <a-entity class="ar-target" data-index="0" data-title="解說牌：蕭屋洋樓" mindar-image-target="targetIndex: 0">
+    <a-entity class="ar-target" data-index="0" mindar-image-target="targetIndex: 0">
       <a-plane color="#00FF88" opacity="0.3" height="0.6" width="0.9"></a-plane>
     </a-entity>
 
     <!-- 解說牌 2 (Target Index 1) -->
-    <a-entity class="ar-target" data-index="1" data-title="解說牌：蕭家祖屋" mindar-image-target="targetIndex: 1">
+    <a-entity class="ar-target" data-index="1" mindar-image-target="targetIndex: 1">
       <a-plane color="#00E5FF" opacity="0.3" height="0.6" width="0.9"></a-plane>
     </a-entity>
 
     <!-- 解說牌 3 (Target Index 2) -->
-    <a-entity class="ar-target" data-index="2" data-title="解說牌：楊家祖堂" mindar-image-target="targetIndex: 2">
+    <a-entity class="ar-target" data-index="2" mindar-image-target="targetIndex: 2">
       <a-plane color="#FF007F" opacity="0.3" height="0.6" width="0.9"></a-plane>
     </a-entity>
   </a-scene>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      // ★ 各景點圖文解說資料（對應 targetIndex 0, 1, 2）
+      const spotData = [
+        {
+          tag: "縣定古蹟・中西合璧建築",
+          title: "蕭屋洋樓",
+          image: "./蕭屋洋樓_1.jpg", // 請替換為實際圖片路徑，若無圖片會自動隱藏
+          desc: "建於日治時期（約1930年代），為佳冬蕭家招待貴賓與休憩之所。建築融合巴洛克式山牆裝飾與傳統閩客工藝，洗石子立面精緻典雅，見證了佳冬蕭家當時的繁華與文化交流。"
+        },
+        {
+          tag: "國定古蹟・五進大院",
+          title: "蕭家祖屋",
+          image: "./蕭家祖屋_2.jpg",
+          desc: "全台罕見的客家五進大院建築群，完整保留了傳統客家宗祠與民居格局。屋脊燕尾與馬背交錯，牆面彩繪與木雕工藝細膩，展現客家族群耕讀傳家與敬祖尊宗的精神。"
+        },
+        {
+          tag: "縣定古蹟・客家堂屋",
+          title: "楊家祖堂",
+          image: "./楊家祖堂_3.jpg",
+          desc: "佳冬楊氏宗族祭祀祖先的核心場所，建築格局方正莊嚴。正廳神龕與祖牌雕刻精巧，周圍留存傳統太極兩儀池等風水設計，體現六堆客庄傳統聚落的空間美學。"
+        }
+      ];
+
       const sceneEl = document.querySelector("a-scene");
       const startOverlay = document.getElementById("start-overlay");
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
       
+      // 圖文卡片元素
+      const infoCard = document.getElementById("info-card");
+      const cardImg = document.getElementById("card-img");
+      const cardTag = document.getElementById("card-tag");
+      const cardTitle = document.getElementById("card-title");
+      const cardDesc = document.getElementById("card-desc");
+      const cardBody = document.getElementById("card-body");
+
       // 控制列元素
       const controlBar = document.getElementById("control-bar");
       const playPauseBtn = document.getElementById("play-pause-btn");
@@ -156,7 +254,7 @@
       let currentAudio = null;
       let currentTitle = "";
 
-      // 安全取得 MindAR 系統實例的輔助函式
+      // 安全取得 MindAR 系統實例
       const getArSystem = () => {
         if (!arSystem && sceneEl.systems) {
           arSystem = sceneEl.systems["mindar-image-system"];
@@ -167,6 +265,31 @@
       sceneEl.addEventListener("loaded", () => {
         getArSystem();
       });
+
+      // 顯示中央圖文解說卡片
+      const showInfoCard = (index) => {
+        const data = spotData[index];
+        if (!data) return;
+
+        cardTag.innerText = data.tag;
+        cardTitle.innerText = data.title;
+        cardDesc.innerText = data.desc;
+
+        if (data.image) {
+          cardImg.style.display = "block";
+          cardImg.src = data.image;
+        } else {
+          cardImg.style.display = "none";
+        }
+
+        cardBody.scrollTop = 0; // 每次開啟時將捲軸重置到最上方
+        infoCard.style.display = "flex";
+      };
+
+      // 隱藏中央圖文解說卡片
+      const hideInfoCard = () => {
+        infoCard.style.display = "none";
+      };
 
       // 停止並重置所有音訊
       const stopAllAudio = () => {
@@ -246,11 +369,13 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音並呼叫 arSystem.unpause() 恢復掃描
+      // 4. 結束按鈕：停止語音、關閉圖文卡片並呼叫 arSystem.unpause() 恢復掃描
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
         currentTitle = "";
+        
+        hideInfoCard();
         controlBar.style.display = "none";
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
@@ -267,14 +392,15 @@
 
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
-        const targetTitle = target.getAttribute("data-title");
 
-        // 辨識成功：播放語音並呼叫 arSystem.pause(true) 暫停掃描
+        // 辨識成功：暫停掃描、顯示圖文卡片並播放語音
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
           const targetAudio = audioList[targetIndex];
-          if (targetAudio) {
+          const data = spotData[targetIndex];
+
+          if (targetAudio && data) {
             isScanning = false;
             const system = getArSystem();
             if (system) {
@@ -283,11 +409,13 @@
 
             stopAllAudio();
             currentAudio = targetAudio;
-            currentTitle = targetTitle;
+            currentTitle = `解說牌：${data.title}`;
+
+            showInfoCard(targetIndex);
+            controlBar.style.display = "flex";
 
             currentAudio.muted = false;
             currentAudio.play();
-            controlBar.style.display = "flex";
             updateUIState(true);
           }
         });
