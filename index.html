@@ -42,7 +42,7 @@
       bottom: 30px;
       left: 50%;
       transform: translateX(-50%);
-      display: none; /* 尚未掃描到任何解說牌前先隱藏 */
+      display: none;
       gap: 10px;
       background: rgba(0, 0, 0, 0.75);
       padding: 10px 16px;
@@ -151,33 +151,24 @@
         document.getElementById("audio-2")
       ];
 
-      let arSystem = null;       // MindAR 系統控制器
-      let isScanning = true;     // 目前是否處於掃描狀態
-      let currentAudio = null;   // 紀錄當前正在播放的語音
-      let currentTitle = "";     // 紀錄當前解說牌標題
+      let arSystem = null;
+      let isScanning = true;
+      let currentAudio = null;
+      let currentTitle = "";
 
-      // 取得 MindAR 系統實例
+      // 安全取得 MindAR 系統實例的輔助函式
+      const getArSystem = () => {
+        if (!arSystem && sceneEl.systems) {
+          arSystem = sceneEl.systems["mindar-image-system"];
+        }
+        return arSystem;
+      };
+
       sceneEl.addEventListener("loaded", () => {
-        arSystem = sceneEl.systems["mindar-image-system"];
+        getArSystem();
       });
 
-      // 暫停掃描辨識
-      const pauseScanning = () => {
-        isScanning = false;
-        if (arSystem) {
-          arSystem.pause(true); // 傳入 true 代表保留當前畫面並停止鏡頭追蹤與辨識
-        }
-      };
-
-      // 恢復掃描辨識
-      const resumeScanning = () => {
-        isScanning = true;
-        if (arSystem) {
-          arSystem.unpause();
-        }
-      };
-
-      // 停止並重置所有音訊的通用函式
+      // 停止並重置所有音訊
       const stopAllAudio = () => {
         audioList.forEach(audio => {
           if (audio) {
@@ -187,7 +178,7 @@
         });
       };
 
-      // 更新按鈕與狀態列文字的函式
+      // 更新按鈕與狀態列文字
       const updateUIState = (isPlaying) => {
         if (isPlaying) {
           playPauseBtn.innerText = "⏸ 暫停";
@@ -202,7 +193,7 @@
         }
       };
 
-      // 監聽每個音訊的播放結束事件（結束後仍維持暫停掃描，直到遊客按下「結束」按鈕）
+      // 監聽音訊自然播放結束
       audioList.forEach(audio => {
         audio.addEventListener("ended", () => {
           playPauseBtn.innerText = "▶ 播放";
@@ -212,12 +203,12 @@
         });
       });
 
-      // 1. 使用者點擊授權：一次性解鎖「所有」語音檔的播放權限
+      // 1. 使用者點擊授權：解鎖所有語音檔
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
         
         const unlockPromises = audioList.map(audio => {
-          audio.muted = true; // 靜音解鎖，避免同時發出爆音
+          audio.muted = true;
           return audio.play().then(() => {
             audio.pause();
             audio.currentTime = 0;
@@ -233,7 +224,7 @@
         });
       });
 
-      // 2. 控制按鈕事件：播放 / 暫停
+      // 2. 播放 / 暫停按鈕
       playPauseBtn.addEventListener("click", () => {
         if (!currentAudio) return;
 
@@ -246,7 +237,7 @@
         }
       });
 
-      // 3. 控制按鈕事件：重新播放
+      // 3. 重新播放按鈕
       replayBtn.addEventListener("click", () => {
         if (!currentAudio) return;
 
@@ -255,7 +246,7 @@
         updateUIState(true);
       });
 
-      // 4. 控制按鈕事件：結束目前導覽，重新開啟鏡頭掃描
+      // 4. 結束按鈕：停止語音並呼叫 arSystem.unpause() 恢復掃描
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -263,25 +254,32 @@
         controlBar.style.display = "none";
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
-        
-        resumeScanning(); // 重新開啟鏡頭掃描辨識
+
+        isScanning = true;
+        const system = getArSystem();
+        if (system) {
+          system.unpause();
+        }
       });
 
-      // 5. 取得所有 AR 目標並綁定事件
+      // 5. 綁定 AR 目標事件
       const targets = document.querySelectorAll(".ar-target");
 
       targets.forEach(target => {
-        const targetIndex = parseInt(target.getAttribute("data-index"));
+        const targetIndex = parseInt(target.getAttribute("data-index"), 10);
         const targetTitle = target.getAttribute("data-title");
 
-        // 辨識成功
+        // 辨識成功：播放語音並呼叫 arSystem.pause(true) 暫停掃描
         target.addEventListener("targetFound", () => {
-          // 若已經進入導覽播放狀態（暫停掃描中），直接忽略後續事件
           if (!isScanning) return;
 
           const targetAudio = audioList[targetIndex];
           if (targetAudio) {
-            pauseScanning(); // 立刻停止鏡頭掃描辨識，避免誤觸其他解說牌並節省電量
+            isScanning = false;
+            const system = getArSystem();
+            if (system) {
+              system.pause(true);
+            }
 
             stopAllAudio();
             currentAudio = targetAudio;
@@ -289,7 +287,7 @@
 
             currentAudio.muted = false;
             currentAudio.play();
-            controlBar.style.display = "flex"; // 顯示下方控制按鈕列
+            controlBar.style.display = "flex";
             updateUIState(true);
           }
         });
