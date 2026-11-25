@@ -12,11 +12,10 @@
     body {
       margin: 0;
       overflow: hidden;
-      background-color: #121212; /* 關閉相機時的深色省電背景 */
+      background-color: #121212;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
-    /* 強制壓低 A-Frame 場景與 MindAR 內建掃描 UI 的層級 */
     a-scene {
       position: fixed !important;
       top: 0; left: 0; width: 100vw; height: 100vh;
@@ -222,7 +221,7 @@
     <a-entity class="ar-target" data-index="2" mindar-image-target="targetIndex: 2"></a-entity>
   </a-scene>
 
-  <!-- 所有 2D UI 統一放在 <a-scene> 之後，確保顯示層級在最上方 -->
+  <!-- 所有 2D UI 統一放在 <a-scene> 之後 -->
   <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
 
   <!-- 中央純文字解說卡片（含底部語音進度條） -->
@@ -257,7 +256,6 @@
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
-      // 各景點文字解說資料（對應 targetIndex 0, 1, 2）
       const spotData = [
         {
           tag: "縣定古蹟・中西合璧建築",
@@ -281,7 +279,6 @@
       const startBtn = document.getElementById("start-btn");
       const statusMsg = document.getElementById("status-msg");
       
-      // 文字卡片與進度條元素
       const infoCard = document.getElementById("info-card");
       const cardTag = document.getElementById("card-tag");
       const cardTitle = document.getElementById("card-title");
@@ -291,13 +288,11 @@
       const currentTimeEl = document.getElementById("current-time");
       const totalTimeEl = document.getElementById("total-time");
 
-      // 控制列元素
       const controlBar = document.getElementById("control-bar");
       const playPauseBtn = document.getElementById("play-pause-btn");
       const replayBtn = document.getElementById("replay-btn");
       const closeBtn = document.getElementById("close-btn");
       
-      // 取得所有語音元素
       const audioList = [
         document.getElementById("audio-0"),
         document.getElementById("audio-1"),
@@ -305,12 +300,13 @@
       ];
 
       let arSystem = null;
-      let isScanning = true;
+      let isScanning = false;        // 預設為 false，等點擊開始且 arReady 後才開啟
+      let isUnlocking = false;       // 標記是否正在執行初始音訊解鎖
       let currentAudio = null;
       let currentTitle = "";
       let isSeeking = false;
+      let cameraStopTimer = null;    // 延遲關閉相機計時器
 
-      // 秒數格式化為 MM:SS
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
         const mins = Math.floor(sec / 60);
@@ -318,7 +314,6 @@
         return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
       };
 
-      // 更新進度條與總時長顯示
       const syncProgressUI = (audio) => {
         if (!audio) return;
         const duration = audio.duration || 0;
@@ -342,53 +337,51 @@
         getArSystem();
       });
 
-      // ★ 徹底關閉相機感測器以節省電力
+      // ★ 交由 MindAR 原生 system.stop() 關閉相機，不再手動破壞 video.srcObject
       const turnOffCamera = () => {
+        if (cameraStopTimer) clearTimeout(cameraStopTimer);
+        // 延遲 300ms 再關閉相機硬體，避開 audio.play() 起播瞬間的執行緒搶佔
+        cameraStopTimer = setTimeout(() => {
+          const system = getArSystem();
+          if (system) {
+            system.stop();
+          }
+          const scanningUI = document.querySelector(".mindar-ui-scanning");
+          if (scanningUI) {
+            scanningUI.style.display = "none";
+          }
+        }, 300);
+      };
+
+      // ★ 重新啟動相機：直接呼叫原生 system.start()
+      const turnOnCamera = () => {
+        if (cameraStopTimer) {
+          clearTimeout(cameraStopTimer);
+          cameraStopTimer = null;
+        }
+        statusMsg.innerText = "正在啟動相機...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
+
         const system = getArSystem();
         if (system) {
-          system.stop(); // 停止 AR 追蹤並釋放底層相機硬體串流 (MediaStream)
-        }
-        // 雙重保險：確保任何殘留的相機視訊軌都已停止並隱藏畫面
-        document.querySelectorAll("video").forEach(video => {
-          if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-            video.srcObject = null;
-          }
-          video.style.display = "none";
-        });
-        const scanningUI = document.querySelector(".mindar-ui-scanning");
-        if (scanningUI) {
-          scanningUI.style.display = "none";
+          system.start();
         }
       };
 
-      // ★ 重新啟動相機並恢復掃描
-      const turnOnCamera = () => {
-        statusMsg.innerText = "正在重新啟動相機...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
-
+      // 監聽 MindAR 相機就緒事件（首次啟動與按下結束後重啟都會觸發）
+      sceneEl.addEventListener("arReady", () => {
         const scanningUI = document.querySelector(".mindar-ui-scanning");
         if (scanningUI) {
           scanningUI.style.display = "flex";
         }
-
-        const system = getArSystem();
-        if (system) {
-          system.start(); // 重新開啟相機硬體與影像辨識
+        // 只有在初始遮罩已關閉後，才允許進行掃描
+        if (startOverlay.style.display === "none") {
+          isScanning = true;
         }
-      };
-
-      // 監聽 MindAR 相機就緒事件
-      sceneEl.addEventListener("arReady", () => {
-        document.querySelectorAll("video").forEach(video => {
-          video.style.display = "block";
-        });
-        isScanning = true;
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
       });
 
-      // 顯示中央文字解說卡片
       const showInfoCard = (index) => {
         const data = spotData[index];
         if (!data) return;
@@ -401,12 +394,10 @@
         infoCard.style.display = "flex";
       };
 
-      // 隱藏中央文字解說卡片
       const hideInfoCard = () => {
         infoCard.style.display = "none";
       };
 
-      // 停止並重置所有音訊
       const stopAllAudio = () => {
         audioList.forEach(audio => {
           if (audio) {
@@ -419,7 +410,6 @@
         totalTimeEl.innerText = "00:00";
       };
 
-      // 更新按鈕與狀態列文字
       const updateUIState = (isPlaying) => {
         if (isPlaying) {
           playPauseBtn.innerText = "⏸ 暫停";
@@ -434,7 +424,6 @@
         }
       };
 
-      // 綁定每個音訊的時間更新與結束事件
       audioList.forEach(audio => {
         audio.addEventListener("loadedmetadata", () => {
           if (currentAudio === audio) syncProgressUI(audio);
@@ -452,7 +441,6 @@
         });
       });
 
-      // 進度條拖曳互動事件
       seekSlider.addEventListener("input", () => {
         if (!currentAudio) return;
         isSeeking = true;
@@ -465,15 +453,19 @@
         isSeeking = false;
       });
 
-      // 1. 使用者點擊授權：解鎖所有語音檔
+      // 1. 使用者點擊授權：安全解鎖所有語音檔，解鎖完成後才開放掃描
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
+        isUnlocking = true;
         
         const unlockPromises = audioList.map(audio => {
           audio.muted = true;
           return audio.play().then(() => {
-            audio.pause();
-            audio.currentTime = 0;
+            // ★ 關鍵防護：如果使用者已經進入正式播放狀態，就絕對不要再執行解鎖的 pause()
+            if (isUnlocking && !currentAudio) {
+              audio.pause();
+              audio.currentTime = 0;
+            }
             audio.muted = false;
           }).catch(err => {
             audio.muted = false;
@@ -481,8 +473,10 @@
           });
         });
 
-        Promise.all(unlockPromises).then(() => {
-          console.log("所有語音檔已解除自動播放限制");
+        Promise.all(unlockPromises).finally(() => {
+          isUnlocking = false;
+          isScanning = true; // 確保所有解鎖動作完全收尾後，才允許觸發辨識
+          console.log("所有語音檔已安全解鎖，開始掃描");
         });
       });
 
@@ -509,12 +503,13 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉文字卡片，並重新啟動相機硬體
+      // 4. 結束按鈕：停止語音、關閉卡片，並透過原生 system.start() 重啟相機
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
         currentTitle = "";
         isSeeking = false;
+        isScanning = false; // 等待 arReady 觸發後再設為 true
         
         hideInfoCard();
         controlBar.style.display = "none";
@@ -527,7 +522,6 @@
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
 
-        // 辨識成功：顯示文字卡片、播放語音並徹底關閉相機省電
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
@@ -536,22 +530,31 @@
 
           if (targetAudio && data) {
             isScanning = false;
+            isUnlocking = false; // 強制終止任何殘留的解鎖狀態
 
-            // 1. 顯示中央文字卡片與下方控制列
+            // 1. 顯示卡片與控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
-            // 2. 播放語音並同步進度條與狀態列
+            // 2. 播放語音（確保音量開啟且重頭播放）
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
             syncProgressUI(currentAudio);
 
             currentAudio.muted = false;
-            currentAudio.play();
-            updateUIState(true);
+            currentAudio.currentTime = 0;
+            const playPromise = currentAudio.play();
+            if (playPromise !== undefined) {
+              playPromise.then(() => {
+                updateUIState(true);
+              }).catch(err => {
+                console.warn("語音播放受阻，嘗試重試:", err);
+                setTimeout(() => currentAudio && currentAudio.play(), 150);
+              });
+            }
 
-            // 3. 徹底停止 AR 並關閉相機感測器省電
+            // 3. 延遲 300ms 關閉相機硬體，確保音訊起播穩定
             turnOffCamera();
           }
         });
