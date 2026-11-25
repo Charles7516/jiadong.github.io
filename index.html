@@ -304,6 +304,7 @@
       let currentAudio = null;
       let currentTitle = "";
       let isSeeking = false;
+      let progressTimer = null; // ★ 新增高頻進度同步計時器
 
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -312,16 +313,38 @@
         return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
       };
 
+      // 更新進度條與總時長顯示
       const syncProgressUI = (audio) => {
         if (!audio) return;
-        const duration = audio.duration || 0;
-        const current = audio.currentTime || 0;
-        seekSlider.max = duration > 0 ? duration : 100;
+        const duration = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+        const current = isFinite(audio.currentTime) ? audio.currentTime : 0;
+        
+        if (duration > 0) {
+          seekSlider.max = duration;
+          totalTimeEl.innerText = formatTime(duration);
+        }
+        
         if (!isSeeking) {
           seekSlider.value = current;
           currentTimeEl.innerText = formatTime(current);
         }
-        totalTimeEl.innerText = formatTime(duration);
+      };
+
+      // ★ 啟動與停止高頻進度輪詢（確保第一次播放與行動瀏覽器都能流暢更新）
+      const startProgressTimer = () => {
+        stopProgressTimer();
+        progressTimer = setInterval(() => {
+          if (currentAudio && !currentAudio.paused) {
+            syncProgressUI(currentAudio);
+          }
+        }, 100);
+      };
+
+      const stopProgressTimer = () => {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
       };
 
       const getArSystem = () => {
@@ -335,7 +358,7 @@
         getArSystem();
       });
 
-      // ★ 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌（保留 MindAR 內部狀態機不破壞）
+      // 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌
       const turnOffCamera = () => {
         const system = getArSystem();
         if (system) {
@@ -353,7 +376,7 @@
         }
       };
 
-      // ★ 恢復相機與辨識：重新取得相機串流接回 MindAR 的 <video>，再呼叫 unpause()（一次即可秒辨識）
+      // 恢復相機與辨識
       const turnOnCamera = async () => {
         statusMsg.innerText = "正在重新啟動相機...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
@@ -414,6 +437,7 @@
       };
 
       const stopAllAudio = () => {
+        stopProgressTimer();
         audioList.forEach(audio => {
           if (audio) {
             audio.pause();
@@ -431,24 +455,29 @@
           playPauseBtn.style.backgroundColor = "#28a745";
           statusMsg.innerText = `省電導覽中（相機已關閉）：${currentTitle}`;
           statusMsg.style.background = "rgba(40, 167, 69, 0.85)";
+          startProgressTimer();
         } else {
           playPauseBtn.innerText = "▶ 播放";
           playPauseBtn.style.backgroundColor = "#007bff";
           statusMsg.innerText = `已暫停：${currentTitle}`;
           statusMsg.style.background = "rgba(255, 152, 0, 0.85)";
+          stopProgressTimer();
         }
       };
 
+      // 監聽音訊載入與播放事件
       audioList.forEach(audio => {
-        audio.addEventListener("loadedmetadata", () => {
-          if (currentAudio === audio) syncProgressUI(audio);
-        });
-
-        audio.addEventListener("timeupdate", () => {
-          if (currentAudio === audio) syncProgressUI(audio);
+        ["loadedmetadata", "durationchange", "playing", "timeupdate"].forEach(evt => {
+          audio.addEventListener(evt, () => {
+            if (currentAudio === audio) syncProgressUI(audio);
+          });
         });
 
         audio.addEventListener("ended", () => {
+          stopProgressTimer();
+          if (currentAudio === audio) {
+            syncProgressUI(audio);
+          }
           playPauseBtn.innerText = "▶ 播放";
           playPauseBtn.style.backgroundColor = "#007bff";
           statusMsg.innerText = `播放完畢：${currentTitle}（按「結束」開啟相機）`;
@@ -456,6 +485,7 @@
         });
       });
 
+      // 進度條拖曳互動事件
       seekSlider.addEventListener("input", () => {
         if (!currentAudio) return;
         isSeeking = true;
@@ -466,9 +496,10 @@
         if (!currentAudio) return;
         currentAudio.currentTime = parseFloat(seekSlider.value);
         isSeeking = false;
+        syncProgressUI(currentAudio);
       });
 
-      // ★ 1. 使用者點擊授權：改用獨立 AudioContext 解鎖全站音效權限，完全不碰觸三個語音檔的 muted 狀態！
+      // 1. 使用者點擊授權（不再呼叫 audio.load() 重置已預載的中繼資料）
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
 
@@ -487,12 +518,10 @@
           console.warn("AudioContext 解鎖提示:", e);
         }
 
-        // 僅預先載入音檔中繼資料（不執行 play/pause 也不設 muted）
         audioList.forEach(audio => {
           if (audio) {
             audio.muted = false;
             audio.volume = 1.0;
-            audio.load();
           }
         });
 
@@ -526,7 +555,7 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉卡片，並重新開啟相機
+      // 4. 結束按鈕
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -554,27 +583,26 @@
           if (targetAudio && data) {
             isScanning = false;
 
-            // 1. 顯示卡片與控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
-            // 2. 確保非靜音且音量為 1.0 後直接播放
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
-            syncProgressUI(currentAudio);
 
             currentAudio.muted = false;
             currentAudio.volume = 1.0;
             currentAudio.currentTime = 0;
+            syncProgressUI(currentAudio);
+
             currentAudio.play().then(() => {
+              syncProgressUI(currentAudio);
               updateUIState(true);
             }).catch(err => {
               console.warn("播放受阻:", err);
               updateUIState(false);
             });
 
-            // 3. 關閉相機硬體感測器省電
             turnOffCamera();
           }
         });
