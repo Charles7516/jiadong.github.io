@@ -304,7 +304,7 @@
       let currentAudio = null;
       let currentTitle = "";
       let isSeeking = false;
-      let progressTimer = null; // ★ 新增高頻進度同步計時器
+      let progressTimer = null;
 
       const formatTime = (sec) => {
         if (!isFinite(sec) || sec < 0) return "00:00";
@@ -313,7 +313,6 @@
         return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
       };
 
-      // 更新進度條與總時長顯示
       const syncProgressUI = (audio) => {
         if (!audio) return;
         const duration = isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
@@ -330,7 +329,6 @@
         }
       };
 
-      // ★ 啟動與停止高頻進度輪詢（確保第一次播放與行動瀏覽器都能流暢更新）
       const startProgressTimer = () => {
         stopProgressTimer();
         progressTimer = setInterval(() => {
@@ -358,6 +356,28 @@
         getArSystem();
       });
 
+      // ★ 強制重置 MindAR 內部目標追蹤狀態（清除「已鎖定同一張圖」的記憶）
+      const resetMindARTrackingState = (system) => {
+        if (!system) return;
+
+        // 1. 重置 MindAR Controller 內部的 trackingStates
+        if (system.controller && Array.isArray(system.controller.trackingStates)) {
+          system.controller.trackingStates.forEach(state => {
+            state.showing = false;
+            state.isTracking = false;
+            state.trackMiss = 0;
+          });
+        }
+
+        // 2. 重置 A-Frame 各 target 元件的追蹤標記
+        document.querySelectorAll(".ar-target").forEach(el => {
+          const targetComp = el.components && el.components["mindar-image-target"];
+          if (targetComp && typeof targetComp.updateWorldMatrix === "function") {
+            targetComp.updateWorldMatrix(null); // 傳入 null 會觸發 MindAR 內部的 targetLost 狀態歸零
+          }
+        });
+      };
+
       // 省電關閉相機：暫停 MindAR 追蹤並停止硬體相機視訊軌
       const turnOffCamera = () => {
         const system = getArSystem();
@@ -376,7 +396,7 @@
         }
       };
 
-      // 恢復相機與辨識
+      // 恢復相機與辨識：重接視訊軌並清空上一張圖片的鎖定狀態
       const turnOnCamera = async () => {
         statusMsg.innerText = "正在重新啟動相機...";
         statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
@@ -400,6 +420,7 @@
 
           const system = getArSystem();
           if (system) {
+            resetMindARTrackingState(system); // ★ 關鍵：重設追蹤狀態，掃同一張圖也能一次觸發
             system.unpause();
           }
 
@@ -408,7 +429,10 @@
         } catch (err) {
           console.error("重啟相機失敗，改用備援啟動:", err);
           const system = getArSystem();
-          if (system) system.start();
+          if (system) {
+            resetMindARTrackingState(system);
+            system.start();
+          }
           isScanning = true;
           statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
         }
@@ -465,7 +489,6 @@
         }
       };
 
-      // 監聽音訊載入與播放事件
       audioList.forEach(audio => {
         ["loadedmetadata", "durationchange", "playing", "timeupdate"].forEach(evt => {
           audio.addEventListener(evt, () => {
@@ -485,7 +508,6 @@
         });
       });
 
-      // 進度條拖曳互動事件
       seekSlider.addEventListener("input", () => {
         if (!currentAudio) return;
         isSeeking = true;
@@ -499,7 +521,7 @@
         syncProgressUI(currentAudio);
       });
 
-      // 1. 使用者點擊授權（不再呼叫 audio.load() 重置已預載的中繼資料）
+      // 1. 使用者點擊授權
       startBtn.addEventListener("click", () => {
         startOverlay.style.display = "none";
 
