@@ -43,18 +43,19 @@
       left: 50%;
       transform: translateX(-50%);
       display: none; /* 尚未掃描到任何解說牌前先隱藏 */
-      gap: 12px;
+      gap: 10px;
       background: rgba(0, 0, 0, 0.75);
-      padding: 12px 20px;
+      padding: 10px 16px;
       border-radius: 40px;
       z-index: 100;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
       backdrop-filter: blur(4px);
+      white-space: nowrap;
     }
 
     .ctrl-btn {
-      padding: 10px 18px;
-      font-size: 15px;
+      padding: 10px 16px;
+      font-size: 14px;
       font-weight: bold;
       border: none;
       border-radius: 25px;
@@ -74,6 +75,10 @@
     #replay-btn {
       background-color: #6c757d;
     }
+
+    #close-btn {
+      background-color: #dc3545;
+    }
   </style>
 </head>
 <body>
@@ -90,7 +95,8 @@
   <!-- 下方懸浮控制列 -->
   <div id="control-bar">
     <button id="play-pause-btn" class="ctrl-btn">⏸ 暫停</button>
-    <button id="replay-btn" class="ctrl-btn">🔄 重新播放</button>
+    <button id="replay-btn" class="ctrl-btn">🔄 重播</button>
+    <button id="close-btn" class="ctrl-btn">✖ 結束</button>
   </div>
 
   <a-scene
@@ -135,6 +141,7 @@
       const controlBar = document.getElementById("control-bar");
       const playPauseBtn = document.getElementById("play-pause-btn");
       const replayBtn = document.getElementById("replay-btn");
+      const closeBtn = document.getElementById("close-btn");
       
       // 取得所有語音元素
       const audioList = [
@@ -224,7 +231,17 @@
         updateUIState(true);
       });
 
-      // 4. 取得所有 AR 目標並綁定事件
+      // 4. 控制按鈕事件：結束目前導覽
+      closeBtn.addEventListener("click", () => {
+        stopAllAudio();
+        currentAudio = null;
+        currentTitle = "";
+        controlBar.style.display = "none";
+        statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
+      });
+
+      // 5. 取得所有 AR 目標並綁定事件
       const targets = document.querySelectorAll(".ar-target");
 
       targets.forEach(target => {
@@ -255,8 +272,7 @@
 
         // 鏡頭移開
         target.addEventListener("targetLost", () => {
-          // 故意不暫停 currentAudio，讓遊客放下手機也能繼續聽完
-          // 僅在目前沒有播放任何語音時，恢復預設提示
+          // 保持語音繼續播放，僅在未播放狀態下恢復預設提示
           if (!currentAudio || currentAudio.paused) {
             statusMsg.innerText = "請將鏡頭對準解說牌...";
             statusMsg.style.background = "rgba(0, 0, 0, 0.6)";
