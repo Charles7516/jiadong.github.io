@@ -9,7 +9,12 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #121212; /* 關閉相機時的深色省電背景 */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
 
     /* 強制壓低 A-Frame 場景與 MindAR 內建掃描 UI 的層級 */
     a-scene {
@@ -100,7 +105,7 @@
       text-align: justify;
     }
 
-    /* ★ 卡片底部語音進度條區塊 */
+    /* 卡片底部語音進度條區塊 */
     #progress-container {
       padding: 12px 22px 16px 22px;
       background: #f8f9fa;
@@ -159,11 +164,12 @@
       transform: translateX(-50%);
       display: none;
       gap: 10px;
-      background: rgba(0, 0, 0, 0.85);
+      background: rgba(30, 30, 30, 0.92);
       padding: 10px 16px;
       border-radius: 40px;
       z-index: 9500;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       white-space: nowrap;
     }
 
@@ -302,7 +308,7 @@
       let isScanning = true;
       let currentAudio = null;
       let currentTitle = "";
-      let isSeeking = false; // 標記使用者是否正在拖曳進度條
+      let isSeeking = false;
 
       // 秒數格式化為 MM:SS
       const formatTime = (sec) => {
@@ -336,13 +342,51 @@
         getArSystem();
       });
 
-      // 控制 MindAR 內建掃描框與暗角遮罩的顯示/隱藏
-      const toggleMindAROverlay = (show) => {
+      // ★ 徹底關閉相機感測器以節省電力
+      const turnOffCamera = () => {
+        const system = getArSystem();
+        if (system) {
+          system.stop(); // 停止 AR 追蹤並釋放底層相機硬體串流 (MediaStream)
+        }
+        // 雙重保險：確保任何殘留的相機視訊軌都已停止並隱藏畫面
+        document.querySelectorAll("video").forEach(video => {
+          if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+            video.srcObject = null;
+          }
+          video.style.display = "none";
+        });
         const scanningUI = document.querySelector(".mindar-ui-scanning");
         if (scanningUI) {
-          scanningUI.style.display = show ? "flex" : "none";
+          scanningUI.style.display = "none";
         }
       };
+
+      // ★ 重新啟動相機並恢復掃描
+      const turnOnCamera = () => {
+        statusMsg.innerText = "正在重新啟動相機...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
+
+        const scanningUI = document.querySelector(".mindar-ui-scanning");
+        if (scanningUI) {
+          scanningUI.style.display = "flex";
+        }
+
+        const system = getArSystem();
+        if (system) {
+          system.start(); // 重新開啟相機硬體與影像辨識
+        }
+      };
+
+      // 監聽 MindAR 相機就緒事件
+      sceneEl.addEventListener("arReady", () => {
+        document.querySelectorAll("video").forEach(video => {
+          video.style.display = "block";
+        });
+        isScanning = true;
+        statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
+      });
 
       // 顯示中央文字解說卡片
       const showInfoCard = (index) => {
@@ -380,7 +424,7 @@
         if (isPlaying) {
           playPauseBtn.innerText = "⏸ 暫停";
           playPauseBtn.style.backgroundColor = "#28a745";
-          statusMsg.innerText = `正在播放：${currentTitle}`;
+          statusMsg.innerText = `省電導覽中（相機已關閉）：${currentTitle}`;
           statusMsg.style.background = "rgba(40, 167, 69, 0.85)";
         } else {
           playPauseBtn.innerText = "▶ 播放";
@@ -403,12 +447,12 @@
         audio.addEventListener("ended", () => {
           playPauseBtn.innerText = "▶ 播放";
           playPauseBtn.style.backgroundColor = "#007bff";
-          statusMsg.innerText = `播放完畢：${currentTitle}（按「結束」繼續掃描）`;
+          statusMsg.innerText = `播放完畢：${currentTitle}（按「結束」開啟相機）`;
           statusMsg.style.background = "rgba(0, 123, 255, 0.85)";
         });
       });
 
-      // ★ 進度條拖曳互動事件
+      // 進度條拖曳互動事件
       seekSlider.addEventListener("input", () => {
         if (!currentAudio) return;
         isSeeking = true;
@@ -465,7 +509,7 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉文字卡片、恢復掃描 UI 並執行 arSystem.unpause()
+      // 4. 結束按鈕：停止語音、關閉文字卡片，並重新啟動相機硬體
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -474,16 +518,7 @@
         
         hideInfoCard();
         controlBar.style.display = "none";
-        statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
-
-        isScanning = true;
-        toggleMindAROverlay(true);
-
-        const system = getArSystem();
-        if (system) {
-          system.unpause();
-        }
+        turnOnCamera();
       });
 
       // 5. 綁定 AR 目標事件
@@ -492,7 +527,7 @@
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
 
-        // 辨識成功：隱藏 MindAR 掃描框、顯示文字卡片、播放語音並暫停掃描
+        // 辨識成功：顯示文字卡片、播放語音並徹底關閉相機省電
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
@@ -502,14 +537,11 @@
           if (targetAudio && data) {
             isScanning = false;
 
-            // 1. 隱藏 MindAR 內建的掃描遮罩
-            toggleMindAROverlay(false);
-
-            // 2. 顯示中央文字卡片與下方控制列
+            // 1. 顯示中央文字卡片與下方控制列
             showInfoCard(targetIndex);
             controlBar.style.display = "flex";
 
-            // 3. 播放語音並同步進度條與狀態列
+            // 2. 播放語音並同步進度條與狀態列
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
@@ -519,11 +551,8 @@
             currentAudio.play();
             updateUIState(true);
 
-            // 4. 暫停 AR 鏡頭追蹤
-            const system = getArSystem();
-            if (system) {
-              system.pause(true);
-            }
+            // 3. 徹底停止 AR 並關閉相機感測器省電
+            turnOffCamera();
           }
         });
       });
