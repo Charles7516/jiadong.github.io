@@ -11,11 +11,22 @@
   <style>
     body { margin: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
-    /* 遮罩 UI */
+    /* ★ 強制壓低 A-Frame 場景與 MindAR 內建掃描 UI 的層級 */
+    a-scene {
+      position: fixed !important;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      z-index: 1 !important;
+    }
+
+    .mindar-ui-overlay {
+      z-index: 10 !important;
+    }
+
+    /* 授權遮罩 UI */
     #start-overlay {
       position: fixed;
       top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(0, 0, 0, 0.85);
+      background: rgba(0, 0, 0, 0.88);
       display: flex; flex-direction: column;
       justify-content: center; align-items: center;
       z-index: 9999; color: #fff; text-align: center; padding: 20px; box-sizing: border-box;
@@ -27,16 +38,17 @@
       border-radius: 30px; cursor: pointer; margin-top: 15px;
     }
 
+    /* 上方狀態提示列 */
     #status-msg {
       position: fixed; top: 20px; left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.7); color: white;
+      background: rgba(0, 0, 0, 0.75); color: white;
       padding: 10px 20px; border-radius: 20px;
-      font-size: 14px; z-index: 1001; text-align: center;
+      font-size: 14px; z-index: 9500; text-align: center;
       white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* ★ 修正：拉高 z-index 至 1000，確保絕對浮在 AR 鏡頭與影片層最上方 */
+    /* ★ 中央圖文解說卡片（放在 a-scene 後方並設高 z-index） */
     #info-card {
       position: fixed;
       top: 50%;
@@ -48,9 +60,9 @@
       background: #ffffff;
       color: #222;
       border-radius: 18px;
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-      z-index: 1000;
-      display: none; /* 掃描成功後改為 flex */
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+      z-index: 9000;
+      display: none;
       flex-direction: column;
       overflow: hidden;
     }
@@ -107,7 +119,7 @@
       background: rgba(0, 0, 0, 0.85);
       padding: 10px 16px;
       border-radius: 40px;
-      z-index: 1001;
+      z-index: 9500;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
       white-space: nowrap;
     }
@@ -134,32 +146,7 @@
 </head>
 <body>
 
-  <!-- 授權遮罩 -->
-  <div id="start-overlay">
-    <h2>佳冬解說牌語音導覽</h2>
-    <p>點擊下方按鈕以啟用語音與相機功能</p>
-    <button id="start-btn">開始導覽體驗</button>
-  </div>
-
-  <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
-
-  <!-- 中央圖文解說卡片 -->
-  <div id="info-card">
-    <img id="card-img" src="" alt="景點照片" onerror="this.style.display='none'" />
-    <div id="card-body">
-      <span id="card-tag">佳冬歷史建築導覽</span>
-      <h3 id="card-title">景點名稱</h3>
-      <p id="card-desc">景點詳細介紹文字...</p>
-    </div>
-  </div>
-
-  <!-- 下方懸浮控制列 -->
-  <div id="control-bar">
-    <button id="play-pause-btn" class="ctrl-btn">⏸ 暫停</button>
-    <button id="replay-btn" class="ctrl-btn">🔄 重播</button>
-    <button id="close-btn" class="ctrl-btn">✖ 結束</button>
-  </div>
-
+  <!-- AR 場景放在最底層 -->
   <a-scene
     mindar-image="imageTargetSrc: ./jd_demo.mind;"
     color-space="sRGB"
@@ -191,6 +178,33 @@
       <a-plane color="#FF007F" opacity="0.3" height="0.6" width="0.9"></a-plane>
     </a-entity>
   </a-scene>
+
+  <!-- ★ 所有 2D UI 統一放在 <a-scene> 之後，確保顯示層級在最上方 -->
+  <div id="status-msg">請將鏡頭對準任意景點解說牌...</div>
+
+  <!-- 中央圖文解說卡片 -->
+  <div id="info-card">
+    <img id="card-img" src="" alt="景點照片" onerror="this.style.display='none'" />
+    <div id="card-body">
+      <span id="card-tag">佳冬歷史建築導覽</span>
+      <h3 id="card-title">景點名稱</h3>
+      <p id="card-desc">景點詳細介紹文字...</p>
+    </div>
+  </div>
+
+  <!-- 下方懸浮控制列 -->
+  <div id="control-bar">
+    <button id="play-pause-btn" class="ctrl-btn">⏸ 暫停</button>
+    <button id="replay-btn" class="ctrl-btn">🔄 重播</button>
+    <button id="close-btn" class="ctrl-btn">✖ 結束</button>
+  </div>
+
+  <!-- 授權遮罩 -->
+  <div id="start-overlay">
+    <h2>佳冬解說牌語音導覽</h2>
+    <p>點擊下方按鈕以啟用語音與相機功能</p>
+    <button id="start-btn">開始導覽體驗</button>
+  </div>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
@@ -257,6 +271,14 @@
       sceneEl.addEventListener("loaded", () => {
         getArSystem();
       });
+
+      // ★ 強制控制 MindAR 內建掃描框與暗角遮罩的顯示/隱藏
+      const toggleMindAROverlay = (show) => {
+        const scanningUI = document.querySelector(".mindar-ui-scanning");
+        if (scanningUI) {
+          scanningUI.style.display = show ? "flex" : "none";
+        }
+      };
 
       // 顯示中央圖文解說卡片
       const showInfoCard = (index) => {
@@ -361,7 +383,7 @@
         updateUIState(true);
       });
 
-      // 4. 結束按鈕：停止語音、關閉圖文卡片並呼叫 arSystem.unpause() 恢復掃描
+      // 4. 結束按鈕：停止語音、關閉圖文卡片、恢復掃描 UI 並執行 arSystem.unpause()
       closeBtn.addEventListener("click", () => {
         stopAllAudio();
         currentAudio = null;
@@ -370,9 +392,11 @@
         hideInfoCard();
         controlBar.style.display = "none";
         statusMsg.innerText = "請將鏡頭對準任意景點解說牌...";
-        statusMsg.style.background = "rgba(0, 0, 0, 0.7)";
+        statusMsg.style.background = "rgba(0, 0, 0, 0.75)";
 
         isScanning = true;
+        toggleMindAROverlay(true); // 重新顯示掃描框
+
         const system = getArSystem();
         if (system) {
           system.unpause();
@@ -385,7 +409,7 @@
       targets.forEach(target => {
         const targetIndex = parseInt(target.getAttribute("data-index"), 10);
 
-        // ★ 修正執行順序：先顯示 UI 與播放語音，最後再呼叫 arSystem.pause(true)
+        // 辨識成功：隱藏 MindAR 掃描框、顯示圖文卡片、播放語音並暫停掃描
         target.addEventListener("targetFound", () => {
           if (!isScanning) return;
 
@@ -395,20 +419,23 @@
           if (targetAudio && data) {
             isScanning = false;
 
+            // 1. 隱藏 MindAR 內建的掃描遮罩
+            toggleMindAROverlay(false);
+
+            // 2. 顯示中央圖文卡片與下方控制列
+            showInfoCard(targetIndex);
+            controlBar.style.display = "flex";
+
+            // 3. 播放語音並更新狀態列
             stopAllAudio();
             currentAudio = targetAudio;
             currentTitle = `解說牌：${data.title}`;
 
-            // 1. 先顯示圖文卡片與下方控制列
-            showInfoCard(targetIndex);
-            controlBar.style.display = "flex";
-
-            // 2. 播放語音並更新狀態列
             currentAudio.muted = false;
             currentAudio.play();
             updateUIState(true);
 
-            // 3. 最後再暫停 AR 鏡頭追蹤
+            // 4. 暫停 AR 鏡頭追蹤
             const system = getArSystem();
             if (system) {
               system.pause(true);
